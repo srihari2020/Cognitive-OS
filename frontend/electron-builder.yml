@@ -1,0 +1,30 @@
+appId: com.cognitiveos.desktop
+productName: Cognitive OS
+directories:
+  output: release
+files:
+  - dist/**/*
+  - electron/**/*
+  - build/icon.ico
+  - package.json
+extraResources:
+  - from: backend-dist/cognitive-backend.exe
+    to: backend/cognitive-backend.exe
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+  artifactName: Cognitive-OS-Setup-${version}.${ext}
+publish:
+  - provider: generic
+    url: https://updates.cognitiveos.local/desktop
+    channel: latest
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico

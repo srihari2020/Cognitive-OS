@@ -1,0 +1,11 @@
+# Cognitive OS - Requirements
+requests>=2.31.0
+cryptography>=41.0.0
+fastapi>=0.116.0
+uvicorn>=0.35.0
+pydantic>=2.11.0
+vosk>=0.3.45
+sounddevice>=0.4.7
+
+# For enhanced "Type Text" features, consider installing:
+# pyautogui

@@ -1,0 +1,316 @@
+[
+    {
+        "timestamp": "2026-03-26T11:17:26.728437",
+        "command": "Test intent detection",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T11:17:50.416671",
+        "command": "Open VS Code to start working?",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T11:18:40.043888",
+        "command": "open vs code",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T11:19:06.537095",
+        "command": "open new tab",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T11:19:29.428245",
+        "command": "open settings",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T11:19:38.597705",
+        "command": "Open VS Code to start working?",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T11:27:39.105853",
+        "command": "open desktop mate",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:02:25.950210",
+        "command": "Execute final synchronization",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:03:38.041718",
+        "command": "open settings",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:03:56.232785",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:04:13.452420",
+        "command": "open edge",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:15:27.298843",
+        "command": "Open VS Code to start working?",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:17:31.121475",
+        "command": "Search for Jarvis AI",
+        "intent": "GOOGLE_SEARCH",
+        "entities": {
+            "query": "jarvis ai"
+        }
+    },
+    {
+        "timestamp": "2026-03-26T12:26:40.837569",
+        "command": "Launch Notepad",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:27:23.123943",
+        "command": "Launch Notepad",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:27:44.683681",
+        "command": "Launch Notepad",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:29:18.702129",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:29:47.784138",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:34:36.277987",
+        "command": "open vs code",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:35:25.891613",
+        "command": "Search for something on Google?",
+        "intent": "GOOGLE_SEARCH",
+        "entities": {
+            "query": "something on google?"
+        }
+    },
+    {
+        "timestamp": "2026-03-26T12:37:18.764030",
+        "command": "Launch Notepad",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:38:40.672777",
+        "command": "google",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:38:53.477981",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:39:16.007435",
+        "command": "open",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:52:02.664053",
+        "command": "ai",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:52:25.906916",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T12:59:34.110152",
+        "command": "Launch Notepad",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T13:01:07.007805",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T13:01:29.730869",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T13:09:17.590198",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T13:09:34.560532",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T13:09:47.291294",
+        "command": "open wand",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T15:40:43.751316",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T15:41:06.384778",
+        "command": "open google chrome",
+        "intent": "GOOGLE_SEARCH",
+        "entities": {
+            "query": "chrome"
+        }
+    },
+    {
+        "timestamp": "2026-03-26T15:41:27.238274",
+        "command": "open youtube",
+        "intent": "OPEN_YOUTUBE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T15:41:41.934489",
+        "command": "Search for something on Google?",
+        "intent": "GOOGLE_SEARCH",
+        "entities": {
+            "query": "something on google?"
+        }
+    },
+    {
+        "timestamp": "2026-03-26T15:42:05.746964",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T15:44:46.000484",
+        "command": "Open YouTube?",
+        "intent": "OPEN_YOUTUBE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T15:45:08.547460",
+        "command": "open linkedIn",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T15:48:38.234051",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T15:49:18.055445",
+        "command": "open google",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T16:06:02.730907",
+        "command": "open chatgpt",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T16:16:28.946633",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-26T16:16:48.163736",
+        "command": "chatgpt",
+        "intent": "UNKNOWN",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-27T09:53:53.649124",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-27T09:54:24.586881",
+        "command": "open Youtube",
+        "intent": "OPEN_YOUTUBE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-27T10:08:02.288402",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-27T10:08:18.830628",
+        "command": "open youtube",
+        "intent": "OPEN_YOUTUBE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-27T10:08:40.342400",
+        "command": "open youtube",
+        "intent": "OPEN_YOUTUBE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-27T10:11:54.978605",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    },
+    {
+        "timestamp": "2026-03-27T10:13:18.605133",
+        "command": "open vscode",
+        "intent": "OPEN_CODE",
+        "entities": {}
+    }
+]
