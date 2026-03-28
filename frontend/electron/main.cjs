@@ -1,17 +1,21 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, session } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const log = require("electron-log/main");
 const { autoUpdater } = require("electron-updater");
 
+// HARD SAFE MODE: reduce GPU/system risk while debugging crashes.
+app.disableHardwareAcceleration();
+
 const DEV_URL = process.env.ELECTRON_RENDERER_URL || "http://127.0.0.1:5173";
+const isDev = !app.isPackaged;
 const HOTKEY = "CommandOrControl+Shift+Space";
 const STABILITY_MODE = true;
 const MODE_SIZES = {
-  idle: { width: 120, height: 120 },
-  active: { width: 1100, height: 760 },
-  processing: { width: 1100, height: 760 },
+  idle: { width: 1200, height: 800 },
+  active: { width: 1200, height: 800 },
+  processing: { width: 1200, height: 800 },
 };
 
 let mainWindow = null;
@@ -19,6 +23,7 @@ let currentMode = "active";
 let isPointerNearOrb = false;
 let isClickThroughEnabled = false;
 let backendProcess = null;
+let backendStartAttempted = false;
 let updateCheckStarted = false;
 
 function getProjectRoot() {
@@ -58,7 +63,8 @@ function appendBackendOutput(stream, fileName) {
 }
 
 function startBackend() {
-  if (backendProcess) return;
+  if (backendProcess || backendStartAttempted) return;
+  backendStartAttempted = true;
 
   try {
     if (app.isPackaged) {
@@ -115,9 +121,9 @@ function applyMode(mode) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const size = MODE_SIZES[mode] || MODE_SIZES.active;
   currentMode = mode;
-  mainWindow.setResizable(mode !== "idle");
-  mainWindow.setAlwaysOnTop(true, "screen-saver");
-  positionWindowAtBottomRight(mainWindow, size.width, size.height);
+  mainWindow.setResizable(true);
+  mainWindow.setAlwaysOnTop(false);
+  mainWindow.center();
   updateClickThroughState();
 }
 
@@ -138,29 +144,37 @@ function updateClickThroughState() {
 function createMainWindow() {
   const preloadPath = path.join(__dirname, "preload.cjs");
   const iconPath = getIconPath();
+  log.info("Creating main window (safe config)");
   mainWindow = new BrowserWindow({
     width: MODE_SIZES.active.width,
     height: MODE_SIZES.active.height,
+    minWidth: 800,
+    minHeight: 600,
+    center: true,
     transparent: false,
-    frame: false,
-    hasShadow: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
+    frame: true,
+    hasShadow: true,
+    alwaysOnTop: false,
+    skipTaskbar: false,
     resizable: true,
-    show: true,
+    show: false,
     backgroundColor: "#090b11",
     icon: iconPath,
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      devTools: isDev,
     },
   });
 
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  mainWindow.setAlwaysOnTop(true, "screen-saver");
-  positionWindowAtBottomRight(mainWindow, MODE_SIZES.active.width, MODE_SIZES.active.height);
+  mainWindow.setVisibleOnAllWorkspaces(false);
+  mainWindow.setAlwaysOnTop(false);
+  mainWindow.setIgnoreMouseEvents(false);
+  mainWindow.center();
 
   if (app.isPackaged) {
     const indexPath = path.join(__dirname, "..", "dist", "index.html");
@@ -172,7 +186,9 @@ function createMainWindow() {
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
     mainWindow.focus();
-    mainWindow.webContents.openDevTools({ mode: "detach" });
+    if (isDev) {
+      mainWindow.webContents.openDevTools({ mode: "detach" });
+    }
   });
 
   mainWindow.on("closed", () => {
@@ -225,7 +241,32 @@ function configureAutoUpdater() {
 
 app.whenReady().then(() => {
   wireAppLogging();
-  startBackend();
+  log.info("App ready (backend disabled temporarily)");
+  // startBackend(); // DISABLED: backend spawn can overload system
+
+  // Harden session with production CSP headers
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    // DEV ONLY: Bypass CSP to allow Vite HMR and inline script injection
+    if (isDev) {
+      callback({});
+      return;
+    }
+
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [
+          "default-src 'self'; " +
+          "script-src 'self'; " +
+          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+          "font-src 'self' https://fonts.gstatic.com; " +
+          "connect-src 'self' http://localhost:8000 http://127.0.0.1:* ws://127.0.0.1:* ws://localhost:*; " +
+          "img-src 'self' data: https:;"
+        ],
+      },
+    });
+  });
+
   createMainWindow();
   registerHotkey();
   configureAutoUpdater();
@@ -233,7 +274,7 @@ app.whenReady().then(() => {
 
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();
-  stopBackend();
+  // stopBackend(); // backend disabled
 });
 
 app.on("window-all-closed", () => {

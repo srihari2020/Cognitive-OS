@@ -1,8 +1,82 @@
-import React, { useState, memo } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { registerLoop, unregisterLoop } from '../utils/runtimeMetrics';
 
-const GojoLogo = memo(() => {
+const GojoLogo = memo(({ isProcessing = false, enableAnimation = false }) => {
   const [isMerging, setIsMerging] = useState(false);
+  const blueSphereRef = useRef(null);
+  const redSphereRef = useRef(null);
+  const purpleCoreRef = useRef(null);
+  const rafRef = useRef(null);
+  const angleRef = useRef(0);
+
+  const stopAnimationLoop = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      unregisterLoop('orb');
+    }
+  };
+
+  const updateLoop = () => {
+    if (!isProcessing || !enableAnimation) {
+      stopAnimationLoop();
+      return;
+    }
+
+    angleRef.current += 0.04; // Slightly slower for stability
+    const angle = angleRef.current;
+    const distance = 35; // Tighter orbit
+    
+    // Direct attribute manipulation for zero CSS recalculation
+    if (blueSphereRef.current && redSphereRef.current) {
+      const bx = Math.cos(angle) * distance;
+      const by = Math.sin(angle) * distance;
+      const rx = Math.cos(angle + Math.PI) * distance;
+      const ry = Math.sin(angle + Math.PI) * distance;
+
+      blueSphereRef.current.setAttribute('cx', (60 + bx).toString());
+      blueSphereRef.current.setAttribute('cy', (100 + by).toString());
+      redSphereRef.current.setAttribute('cx', (140 + rx).toString());
+      redSphereRef.current.setAttribute('cy', (100 + ry).toString());
+    }
+
+    // Pulse effect for purple core if merging - using simple scale
+    if (purpleCoreRef.current && isMerging) {
+      const pulse = 1 + Math.sin(angle * 2) * 0.08;
+      purpleCoreRef.current.setAttribute('transform', `scale(${pulse})`);
+    }
+
+    rafRef.current = requestAnimationFrame(updateLoop);
+  };
+
+  useEffect(() => {
+    if (isProcessing && enableAnimation) {
+      if (!rafRef.current) {
+        // Strict: Only register and run while processing
+        if (registerLoop('orb', stopAnimationLoop)) {
+          rafRef.current = requestAnimationFrame(updateLoop);
+        }
+      }
+    } else {
+      // Immediate Stop when processing ends or animation is disabled
+      stopAnimationLoop();
+      // Reset positions to baseline immediately
+      if (blueSphereRef.current) {
+        blueSphereRef.current.setAttribute('cx', '60');
+        blueSphereRef.current.setAttribute('cy', '100');
+      }
+      if (redSphereRef.current) {
+        redSphereRef.current.setAttribute('cx', '140');
+        redSphereRef.current.setAttribute('cy', '100');
+      }
+      if (purpleCoreRef.current) {
+        purpleCoreRef.current.setAttribute('transform', 'scale(1)');
+      }
+    }
+
+    return () => stopAnimationLoop();
+  }, [isProcessing, enableAnimation]);
 
   return (
     <div 
@@ -10,14 +84,8 @@ const GojoLogo = memo(() => {
       onMouseEnter={() => setIsMerging(true)}
       onMouseLeave={() => setIsMerging(false)}
     >
-      <svg width="100%" height="100%" viewBox="0 0 200 200" className="drop-shadow-[0_0_15px_rgba(168,85,247,0.5)]">
+      <svg width="100%" height="100%" viewBox="0 0 200 200">
         <defs>
-          <filter id="energyFilter">
-            <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" result="noise" />
-            <feDisplacementMap in="SourceGraphic" in2="noise" scale="10" />
-            <feGaussianBlur stdDeviation="1.5" />
-          </filter>
-          
           <radialGradient id="blueEnergy" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#3b82f6" />
             <stop offset="100%" stopColor="transparent" />
@@ -35,58 +103,37 @@ const GojoLogo = memo(() => {
           </radialGradient>
         </defs>
 
-        {/* Blue Energy (Lapse) */}
-        <motion.circle
+        {/* Blue Energy (Lapse) - Minimal Visual Cost */}
+        <circle
+          ref={blueSphereRef}
           cx="60"
           cy="100"
-          r="40"
+          r="30"
           fill="url(#blueEnergy)"
-          filter="url(#energyFilter)"
-          animate={{
-            x: isMerging ? 40 : 0,
-            opacity: isMerging ? 0 : 0.8,
-            scale: isMerging ? 0.5 : 1
-          }}
-          transition={{ duration: 0.6, ease: "circIn" }}
+          opacity="0.5"
         />
 
-        {/* Red Energy (Reversal) */}
-        <motion.circle
+        {/* Red Energy (Reversal) - Minimal Visual Cost */}
+        <circle
+          ref={redSphereRef}
           cx="140"
           cy="100"
-          r="40"
+          r="30"
           fill="url(#redEnergy)"
-          filter="url(#energyFilter)"
-          animate={{
-            x: isMerging ? -40 : 0,
-            opacity: isMerging ? 0 : 0.8,
-            scale: isMerging ? 0.5 : 1
-          }}
-          transition={{ duration: 0.6, ease: "circIn" }}
+          opacity="0.5"
         />
 
-        {/* Purple Singularity (Hollow Purple) */}
+        {/* Purple Singularity - Optimized Path */}
         <AnimatePresence>
           {isMerging && (
             <motion.g initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1.2 }} exit={{ opacity: 0, scale: 2 }}>
               <circle
+                ref={purpleCoreRef}
                 cx="100"
                 cy="100"
-                r="50"
+                r="40"
                 fill="url(#purpleCore)"
-                filter="url(#energyFilter)"
-                className="animate-pulse"
-              />
-              <motion.circle
-                cx="100"
-                cy="100"
-                r="55"
-                fill="none"
-                stroke="#a855f7"
-                strokeWidth="2"
-                strokeDasharray="10 5"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                className="origin-center"
               />
             </motion.g>
           )}

@@ -1,17 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import * as animeModule from 'animejs';
 import { motion, useMotionValue, useSpring } from 'framer-motion';
-
-// Robustly extract animate and stagger from the module
-const animate = animeModule.animate || (animeModule.default && animeModule.default.animate) || animeModule.default;
-const stagger = animeModule.stagger || (animeModule.default && animeModule.default.stagger);
 
 const NODE_COUNT = 40;
 const CONNECTION_MAX_DIST = 200;
 
-export default function NeuralBackground() {
+export default function NeuralBackground({ active = false }) {
   const [nodes, setNodes] = useState([]);
   const containerRef = useRef(null);
+  const lastMoveRef = useRef(0);
   
   // Mouse tracking for parallax
   const mouseX = useMotionValue(0);
@@ -32,38 +28,18 @@ export default function NeuralBackground() {
     setNodes(newNodes);
 
     const handleMouseMove = (e) => {
+      if (!active) return;
+      const now = performance.now();
+      if (now - lastMoveRef.current < 60) return;
+      lastMoveRef.current = now;
       const { clientX, clientY } = e;
       mouseX.set((clientX - window.innerWidth / 2) / 30);
       mouseY.set((clientY - window.innerHeight / 2) / 30);
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-
-    // Only run animation if animate is a function
-    if (typeof animate === 'function') {
-      try {
-        animate({
-          targets: '.neural-node',
-          r: [
-            { value: (el) => parseFloat(el.getAttribute('data-size')) * 1.5, duration: 1000, easing: 'easeOutQuad' },
-            { value: (el) => parseFloat(el.getAttribute('data-size')), duration: 1000, easing: 'easeInQuad' }
-          ],
-          opacity: [
-            { value: 0.8, duration: 800, easing: 'linear' },
-            { value: 0.3, duration: 1200, easing: 'linear' }
-          ],
-          loop: true,
-          delay: (typeof stagger === 'function') ? stagger(100) : 100
-        });
-      } catch (e) {
-        console.error('Animejs pulse execution failed:', e);
-      }
-    } else {
-      console.warn('Animejs animate is not a function:', animate);
-    }
-
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
     return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
+  }, [active, mouseX, mouseY]);
 
   return (
     <div ref={containerRef} className="fixed inset-0 z-0 overflow-hidden bg-black pointer-events-none">
@@ -143,12 +119,12 @@ export default function NeuralBackground() {
               r={node.size * 0.3}
               fill="#00f3ff"
               animate={{
-                opacity: [0.2, 1, 0.2],
-                scale: [1, 1.5, 1]
+                opacity: active ? [0.2, 1, 0.2] : 0.2,
+                scale: active ? [1, 1.35, 1] : 1
               }}
               transition={{
                 duration: Math.random() * 2 + 1,
-                repeat: Infinity,
+                repeat: active ? 6 : 0,
                 ease: "easeInOut"
               }}
             />

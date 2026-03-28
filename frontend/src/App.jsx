@@ -11,9 +11,30 @@ import StabilityDashboard from './components/StabilityDashboard';
 import { Minimize2 } from 'lucide-react';
 import { commandService } from './services/api';
 import { UIProvider, useUI } from './context/UIContext';
+import { getActiveLoops, stopAllLoops } from './utils/runtimeMetrics';
+
+// CRITICAL: Hard safe mode must mount no effects, loops, or listeners.
+const HARD_SAFE_MODE = false; // Transitioned to PARTIAL SAFE MODE
+const PARTIAL_SAFE_MODE = true;
+
+const INITIAL_FEATURE_FLAGS = {
+  enableSuggestions: true,
+  enableOrbAnimation: true,
+  enableBackground: true,
+  enableCursor: true,
+};
 
 function AppContent() {
-  const { uiMode, setUiMode, intensity, fps, isUserActive, attentionLevel, startPerformanceSample, syncAnticipationNow, cleanupSignal, performanceTier, visualQuality, qualityScalar } = useUI();
+  const [featureFlags, setFeatureFlags] = useState(INITIAL_FEATURE_FLAGS);
+  
+  useEffect(() => {
+    console.log('[CognitiveOS] AppContent mount (PARTIAL SAFE MODE)');
+    console.log(`[CognitiveOS] Initial Feature Flags:`, INITIAL_FEATURE_FLAGS);
+    return () => console.log('[CognitiveOS] AppContent unmount');
+  }, []);
+
+  const { uiMode, setUiMode, intensity, fps, isUserActive, attentionLevel, startPerformanceSample, syncAnticipationNow, cleanupSignal, performanceTier, visualQuality, qualityScalar, backendStatus } = useUI();
+  const isBackendOffline = backendStatus === 'OFFLINE';
   const [responses, setResponses] = useState([
     { id: 'initial', text: 'SYSTEM ONLINE. Adaptive protocols engaged.' }
   ]);
@@ -24,6 +45,7 @@ function AppContent() {
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [wakeStartSignal, setWakeStartSignal] = useState(0);
   const [animationState, setAnimationState] = useState('IDLE');
+  const [fpsDropCount, setFpsDropCount] = useState(0);
   const [assistantMode, setAssistantMode] = useState(Boolean(window.electronAssistant) ? 'idle' : 'active');
   const [idleIntentLevel, setIdleIntentLevel] = useState('low');
   const [systemStatus, setSystemStatus] = useState({ status: 'ACTIVE', latency: '1MS' });
@@ -43,6 +65,72 @@ function AppContent() {
   const [stabilityMode, setStabilityMode] = useState(false);
   const isDev = import.meta.env.DEV;
 
+  useEffect(() => {
+    // Loop Safety Check
+    const activeLoops = getActiveLoops();
+    // Allow 'orb' loop only while processing
+    const unexpectedLoops = activeLoops.filter(name => isProcessing ? (name !== 'orb') : true);
+    
+    if (unexpectedLoops.length > 0) {
+      console.warn(`[CognitiveOS] SAFETY ALERT: ${unexpectedLoops.length} unexpected loops found: ${unexpectedLoops.join(', ')}. Stopping all.`);
+      stopAllLoops();
+    }
+    
+    // Performance Guard Monitoring
+    if (fps > 0 && fps < 30) {
+      setFpsDropCount(prev => {
+        const next = prev + 1;
+        if (next >= 5) { // Increased to 5 checks for better stability
+          if (featureFlags.enableOrbAnimation || featureFlags.enableBackground) {
+            console.warn(`[CognitiveOS] PERFORMANCE GUARD: Persistent low FPS detected (${fps}). Throttling animations.`);
+            setFeatureFlags(prevFlags => ({
+              ...prevFlags,
+              enableOrbAnimation: false,
+              enableBackground: false
+            }));
+          }
+        }
+        return next;
+      });
+    } else if (fps >= 45) { // Lower recovery threshold
+      setFpsDropCount(0);
+      if (!featureFlags.enableOrbAnimation || !featureFlags.enableBackground) {
+        setFeatureFlags(prevFlags => ({
+          ...prevFlags,
+          enableOrbAnimation: INITIAL_FEATURE_FLAGS.enableOrbAnimation,
+          enableBackground: INITIAL_FEATURE_FLAGS.enableBackground
+        }));
+      }
+    }
+
+    if (activeLoops.length > 2) { // Lower threshold for PARTIAL SAFE MODE
+      console.warn(`[CognitiveOS] PERFORMANCE GUARD: Loop count high (${activeLoops.length}). Stopping animations.`);
+      setFeatureFlags(prev => ({
+        ...prev,
+        enableOrbAnimation: false,
+        enableBackground: false
+      }));
+    }
+  }, [fps, featureFlags, isProcessing]);
+
+  // Periodic Performance Monitoring
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      const activeLoops = getActiveLoops();
+      
+      // Cleanup verification: If no animation is running, loops must be 0
+      const isAnimating = isSearching || isProcessing || isMerging || isShowingBlast || animationState !== 'IDLE';
+      if (!isAnimating && activeLoops.length > 0) {
+        // Only suggestionsPoll is allowed if not in safe mode
+        const heavyLoops = PARTIAL_SAFE_MODE ? activeLoops : activeLoops.filter(l => l !== 'suggestionsPoll');
+        if (heavyLoops.length > 0) {
+          stopAllLoops();
+        }
+      }
+    }, 5000);
+    return () => clearInterval(intervalId);
+  }, [fps, featureFlags, isSearching, isProcessing, isMerging, isShowingBlast, animationState, responses.length]);
+
   const clearLifecycleTimeouts = () => {
     lifecycleTimeoutsRef.current.forEach((id) => clearTimeout(id));
     lifecycleTimeoutsRef.current = [];
@@ -58,6 +146,11 @@ function AppContent() {
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+    
+    // Performance State Cleanup: Limit history size to 30 entries
+    if (responses.length > 30) {
+      setResponses(prev => prev.slice(-30));
     }
   }, [responses]);
 
@@ -98,7 +191,7 @@ function AppContent() {
   }, [isElectronOverlay, assistantMode, isProcessing, isMerging, isShowingBlast, stabilityMode]);
 
   useEffect(() => {
-    if (!isElectronOverlay || assistantMode !== 'idle' || stabilityMode) return;
+    if (!isElectronOverlay || assistantMode !== 'idle' || stabilityMode || (PARTIAL_SAFE_MODE && !featureFlags.enableOrbAnimation)) return;
     let frameId = null;
     let pendingMouse = null;
     const toUnit = (v) => Math.max(0, Math.min(1, v));
@@ -210,7 +303,7 @@ function AppContent() {
   }, [isElectronOverlay]);
 
   useEffect(() => {
-    if (stabilityMode) return;
+    if (stabilityMode || PARTIAL_SAFE_MODE || isBackendOffline) return;
     let mounted = true;
     const intervalId = setInterval(async () => {
       if (isProcessing || isMerging || isShowingBlast) return;
@@ -224,7 +317,7 @@ function AppContent() {
       mounted = false;
       clearInterval(intervalId);
     };
-  }, [isProcessing, isMerging, isShowingBlast, stabilityMode]);
+  }, [isProcessing, isMerging, isShowingBlast, stabilityMode, isBackendOffline]);
 
   const speakResponse = (text) => {
     if (!window.speechSynthesis || !text) return;
@@ -247,6 +340,14 @@ function AppContent() {
     startPerformanceSample(2200);
     syncAnticipationNow();
     
+    if (isBackendOffline) {
+      setResponses(prev => [...prev, {
+        id: `err-${Date.now()}`,
+        text: `[SYSTEM]: Connection lost. Neural core is in local fallback mode.`
+      }]);
+      return;
+    }
+
     try {
       const result = await commandService.send(text);
       
@@ -296,17 +397,22 @@ function AppContent() {
 
   return (
     <motion.div 
-      animate={stabilityMode ? undefined : { scale: isShowingBlast ? 0.98 : 1 }}
-      transition={stabilityMode ? undefined : { duration: 0.2 }}
+      animate={stabilityMode || PARTIAL_SAFE_MODE ? undefined : { scale: isShowingBlast ? 0.98 : 1 }}
+      transition={stabilityMode || PARTIAL_SAFE_MODE ? undefined : { duration: 0.2 }}
       className={`relative overflow-hidden flex flex-col selection:bg-purple-500/30 ${
         isElectronOverlay
           ? 'w-full h-full rounded-[22px] border border-white/10 bg-black/45 backdrop-blur-xl shadow-[0_20px_60px_rgba(0,0,0,0.55)]'
           : 'w-screen h-screen bg-black'
       }`}
     >
-      {!stabilityMode && qualityScalar > 0.35 && <CustomCursor />}
+      {PARTIAL_SAFE_MODE && (
+        <div className="absolute top-2 left-2 z-[100] px-2 py-1 rounded-md border border-yellow-500/50 bg-yellow-500/10 font-mono text-[8px] text-yellow-500 tracking-widest pointer-events-none">
+          PARTIAL SAFE MODE ACTIVE
+        </div>
+      )}
+      {!stabilityMode && featureFlags.enableCursor && qualityScalar > 0.35 && <CustomCursor />}
 
-      {isElectronOverlay && assistantMode === 'idle' ? (
+      {isElectronOverlay && assistantMode === 'idle' && featureFlags.enableOrbAnimation ? (
         <button
           ref={orbButtonRef}
           type="button"
@@ -322,10 +428,14 @@ function AppContent() {
             idleIntentLevel === 'low' ? 'animate-pulse' : 'animate-ping'
           }`} />
         </button>
+      ) : isElectronOverlay && assistantMode === 'idle' ? (
+        <div className="absolute inset-0 m-auto w-12 h-12 rounded-full border border-neon-cyan/40 bg-black/40 flex items-center justify-center">
+           <div className="w-2 h-2 rounded-full bg-neon-cyan" />
+        </div>
       ) : (
         <>
           {/* Cinematic Physics Background */}
-          {!stabilityMode && visualQuality !== 'OFF' && (
+          {!stabilityMode && featureFlags.enableBackground && visualQuality !== 'OFF' && (
             <AntigravityBackground
               isSearching={isSearching}
               isProcessing={isProcessing}
@@ -338,23 +448,25 @@ function AppContent() {
           )}
           
           {/* Fullscreen Transition Blast */}
-          {!stabilityMode && qualityScalar > 0.55 && <PurpleBlast isVisible={isShowingBlast} />}
+          {!stabilityMode && !PARTIAL_SAFE_MODE && qualityScalar > 0.55 && (
+            <PurpleBlast isVisible={isShowingBlast} qualityLevel={visualQuality} />
+          )}
 
           {/* Cinematic Header */}
           <header className="relative z-30 w-full p-6 flex justify-between items-start pointer-events-none">
         <motion.div 
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
+          initial={PARTIAL_SAFE_MODE ? undefined : { y: -20, opacity: 0 }}
+          animate={PARTIAL_SAFE_MODE ? { opacity: 1 } : { y: 0, opacity: 1 }}
           className="flex items-center gap-4 pointer-events-auto"
         >
-          <GojoLogo />
+          <GojoLogo isProcessing={isProcessing} enableAnimation={featureFlags.enableOrbAnimation} />
           <div className="flex flex-col">
             <h1 className="font-orbitron text-2xl font-black tracking-tighter text-white">
               COGNITIVE <span className="text-neon-cyan">OS</span>
             </h1>
             <div className="flex items-center gap-2 text-[10px] text-gray-400 font-mono tracking-widest uppercase">
-              <span className="w-2 h-2 rounded-full bg-neon-cyan animate-pulse" />
-              Intelligence Core v2.0 | FPS: {fps} | {attentionLevel}
+              <span className={`w-2 h-2 rounded-full ${isBackendOffline ? 'bg-red-500' : 'bg-neon-cyan'} ${PARTIAL_SAFE_MODE || isBackendOffline ? '' : 'animate-pulse'}`} />
+              Intelligence Core v2.0 | FPS: {fps} | {attentionLevel} | {isBackendOffline ? 'BACKEND OFFLINE' : `LOOPS: ${getActiveLoops().length}`}
             </div>
           </div>
         </motion.div>
@@ -390,7 +502,7 @@ function AppContent() {
           <div className="flex items-center gap-6">
             <div>HZ: <span className={fps < 60 ? 'text-red-500 font-bold' : 'text-white'}>{fps}</span></div>
             <div className="hidden md:block">INTENSITY: <span className="text-white">{Math.round(intensity * 100)}%</span></div>
-            <div>STATUS: <span className="text-white">{isVoiceListening ? 'LISTENING' : systemStatus.status}</span></div>
+            <div>STATUS: <span className={isBackendOffline ? 'text-red-500 font-bold' : 'text-white'}>{isBackendOffline ? 'BACKEND OFFLINE' : (isVoiceListening ? 'LISTENING' : systemStatus.status)}</span></div>
           </div>
         </div>
           {isElectronOverlay && (
@@ -449,7 +561,7 @@ function AppContent() {
                 }}
               />
               <div className="absolute -top-32 right-0 w-full flex justify-end">
-                <Suggestions onSelect={handleSendCommand} />
+                {featureFlags.enableSuggestions && <Suggestions onSelect={handleSendCommand} isSafeMode={PARTIAL_SAFE_MODE} />}
               </div>
             </div>
           </footer>
@@ -483,6 +595,22 @@ function AppContent() {
 }
 
 export default function App() {
+  useEffect(() => {
+    console.log('[CognitiveOS] App mount');
+    return () => console.log('[CognitiveOS] App unmount');
+  }, []);
+
+  if (HARD_SAFE_MODE) {
+    console.log('[CognitiveOS] HARD_SAFE_MODE active');
+    return (
+      <div className="w-screen h-screen bg-black text-white flex items-center justify-center">
+        <div className="px-6 py-5 rounded-xl border border-white/10 bg-white/5 font-mono text-sm tracking-widest">
+          HARD SAFE MODE ACTIVE
+        </div>
+      </div>
+    );
+  }
+
   return (
     <UIProvider>
       <AppContent />

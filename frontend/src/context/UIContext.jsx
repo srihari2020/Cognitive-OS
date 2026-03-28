@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { commandService } from '../services/api';
-import { beginLoop, endLoop, setMetricsFps, subscribeMetrics } from '../utils/runtimeMetrics';
+import { registerLoop, unregisterLoop, setMetricsFps, subscribeMetrics } from '../utils/runtimeMetrics';
 
 const UIContext = createContext();
 
@@ -16,6 +16,7 @@ export const UIProvider = ({ children }) => {
   const [visualQuality, setVisualQuality] = useState('HIGH'); // HIGH | MEDIUM | LOW | OFF
   const [qualityScalar, setQualityScalar] = useState(1);
   const [cleanupSignal, setCleanupSignal] = useState(0);
+  const [backendStatus, setBackendStatusInternal] = useState('UNKNOWN');
   
   const fpsRef = useRef([]);
   const lastTimeRef = useRef(performance.now());
@@ -28,6 +29,7 @@ export const UIProvider = ({ children }) => {
   const targetQualityRef = useRef(1);
   const loopTrendRef = useRef([]);
   const interactionBurstRef = useRef([]);
+  const activityThrottleRef = useRef(0);
 
   const QUALITY_TO_SCALAR = {
     HIGH: 1,
@@ -38,14 +40,16 @@ export const UIProvider = ({ children }) => {
 
   const stopPerformanceSample = () => {
     if (fpsSamplerRef.current.frameId) {
-      cancelAnimationFrame(fpsSamplerRef.current.frameId);
-      endLoop('fpsSampler');
+      clearInterval(fpsSamplerRef.current.frameId);
     }
     fpsSamplerRef.current = { running: false, frameId: null, until: 0 };
     fpsRef.current = [];
   };
 
   const startPerformanceSample = (durationMs = 1500) => {
+    // If user is idle and not in a special animation state, don't start a new sample
+    if (!isUserActive && !fpsSamplerRef.current.running) return;
+    
     const now = performance.now();
     if (fpsSamplerRef.current.running) {
       fpsSamplerRef.current.until = Math.max(fpsSamplerRef.current.until, now + durationMs);
@@ -57,7 +61,16 @@ export const UIProvider = ({ children }) => {
     lastTimeRef.current = now;
     fpsRef.current = [];
 
-    const sample = (time) => {
+    // Use a throttled interval for FPS estimation instead of a loop
+    const tick = () => {
+      const time = performance.now();
+      
+      // If user became idle or component stopped running, kill the interval
+      if (!isUserActive && !fpsSamplerRef.current.running) {
+        stopPerformanceSample();
+        return;
+      }
+
       const delta = time - lastTimeRef.current;
       lastTimeRef.current = time;
 
@@ -69,29 +82,33 @@ export const UIProvider = ({ children }) => {
         const avg = fpsRef.current.length
           ? fpsRef.current.reduce((a, b) => a + b, 0) / fpsRef.current.length
           : fps;
-        const rounded = Math.round(avg);
+        
+        // Cap FPS display to 60 for consistency and perceived stability
+        const cappedAvg = Math.min(avg, 60);
+        const rounded = Math.round(cappedAvg);
+        
         setFps(rounded);
         setMetricsFps(rounded);
 
         // Dynamic Performance Scaling in Smart Mode
-        if (uiMode === 'smart' && avg < 60) {
+        if (uiMode === 'smart' && avg < 45) {
           setIntensity(0.4);
-        } else if (uiMode === 'smart' && avg > 100) {
+        } else if (uiMode === 'smart' && avg > 55) {
           setIntensity(1);
         }
 
         stopPerformanceSample();
         return;
       }
-
-      fpsSamplerRef.current.frameId = requestAnimationFrame(sample);
     };
 
-    beginLoop('fpsSampler');
-    fpsSamplerRef.current.frameId = requestAnimationFrame(sample);
+    // No registerLoop: fpsSampler is now a standard throttled interval
+    fpsSamplerRef.current.frameId = setInterval(tick, 100);
+    tick(); // Immediate first tick
   };
 
   const syncAnticipationNow = async () => {
+    if (backendStatus === 'OFFLINE' || commandService.isOffline()) return;
     const now = Date.now();
     if (now - lastSyncRef.current < 800) return;
     lastSyncRef.current = now;
@@ -109,10 +126,12 @@ export const UIProvider = ({ children }) => {
 
   // Event-driven baseline sample (on mount/mode switch)
   useEffect(() => {
-    startPerformanceSample(1200);
-    syncAnticipationNow();
+    if (isUserActive) {
+      startPerformanceSample(1200);
+      syncAnticipationNow();
+    }
     return () => stopPerformanceSample();
-  }, [uiMode]);
+  }, [uiMode, isUserActive]);
 
   // Automatic stability governor.
   useEffect(() => {
@@ -120,6 +139,9 @@ export const UIProvider = ({ children }) => {
       metricsRef.current.fps = payload.fps || metricsRef.current.fps;
       metricsRef.current.activeLoops = payload.activeLoops || 0;
       setActiveLoops(payload.activeLoops || 0);
+      if (payload.backendStatus && payload.backendStatus !== backendStatus) {
+        setBackendStatusInternal(payload.backendStatus);
+      }
     });
 
     const controlId = setInterval(() => {
@@ -204,13 +226,14 @@ export const UIProvider = ({ children }) => {
       }
     }, 2000);
 
+    // Smooth scaling at 1s cadence (idle-safe). No sub-second polling.
     const smoothId = setInterval(() => {
       const target = targetQualityRef.current;
       setQualityScalar((prev) => {
-        const next = prev + (target - prev) * 0.18;
-        return Math.abs(next - prev) < 0.01 ? target : next;
+        if (Math.abs(target - prev) < 0.02) return target;
+        return prev + (target - prev) * 0.35;
       });
-    }, 250);
+    }, 1000);
 
     return () => {
       unsubscribe();
@@ -222,6 +245,10 @@ export const UIProvider = ({ children }) => {
   // Activity Monitor + throttled sync (event-driven only)
   useEffect(() => {
     const handleActivity = (e) => {
+      // Throttle activity processing to avoid mousemove floods (30–60ms).
+      const now = Date.now();
+      if (now - activityThrottleRef.current < 60) return;
+      activityThrottleRef.current = now;
       interactionBurstRef.current.push(Date.now());
       if (interactionBurstRef.current.length > 60) {
         interactionBurstRef.current.shift();
@@ -229,9 +256,8 @@ export const UIProvider = ({ children }) => {
       setIsUserActive(true);
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       
-      // Throttle backend interaction sync (every 200ms)
-      const now = Date.now();
-      if (now - lastSyncRef.current > 200) {
+      // Throttle backend interaction sync (every 250ms)
+      if (now - lastSyncRef.current > 250) {
         const x = e.clientX || 0;
         const y = e.clientY || 0;
         commandService.recordInteraction(e.type, x, y);
@@ -246,6 +272,10 @@ export const UIProvider = ({ children }) => {
 
       idleTimerRef.current = setTimeout(() => {
         setIsUserActive(false);
+        // Reset FPS baseline to 60 when idle to prevent stuck low values
+        setFps(60);
+        setMetricsFps(60);
+        
         if (uiMode === 'smart') setIntensity(1);
       }, 5000); // Resume Cinematic after 5s idle
     };
@@ -274,6 +304,7 @@ export const UIProvider = ({ children }) => {
     allowHeavyVisuals: visualQuality !== 'OFF',
     allowNewAnimations: visualQuality !== 'OFF',
     cleanupSignal,
+    backendStatus,
     startPerformanceSample,
     syncAnticipationNow
   };

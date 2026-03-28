@@ -1,16 +1,19 @@
 const store = {
   fps: 0,
-  activeLoops: 0,
   backendStatus: "UNKNOWN",
   subscribers: new Set(),
 };
+
+// Global loop registry with optional stop callbacks (failsafe).
+const loopRegistry = new Map(); // name -> { startedAt, stop }
+const LOOP_THRESHOLD = 4;
 
 const safeEmit = () => {
   store.subscribers.forEach((cb) => {
     try {
       cb({
         fps: store.fps,
-        activeLoops: store.activeLoops,
+        activeLoops: loopRegistry.size,
         backendStatus: store.backendStatus,
       });
     } catch (_) {
@@ -24,7 +27,7 @@ export function subscribeMetrics(callback) {
   store.subscribers.add(callback);
   callback({
     fps: store.fps,
-    activeLoops: store.activeLoops,
+    activeLoops: loopRegistry.size,
     backendStatus: store.backendStatus,
   });
   return () => store.subscribers.delete(callback);
@@ -43,18 +46,52 @@ export function setBackendStatus(status) {
   safeEmit();
 }
 
-export function beginLoop(name = "loop") {
-  const key = `__cog_loop_${name}`;
-  if (typeof window !== "undefined" && window[key]) return;
-  if (typeof window !== "undefined") window[key] = true;
-  store.activeLoops += 1;
+export function registerLoop(name, stop) {
+  if (!name) return false;
+  if (loopRegistry.has(name)) return true;
+
+  if (loopRegistry.size >= LOOP_THRESHOLD) {
+    // Failsafe: stop everything we know about, then refuse new loop.
+    try {
+      // eslint-disable-next-line no-console
+      console.warn(`[CognitiveOS] LOOP FAILSAFE: threshold exceeded (${loopRegistry.size}). Stopping loops.`);
+    } catch (_) {}
+    stopAllLoops();
+    return false;
+  }
+
+  loopRegistry.set(name, { startedAt: Date.now(), stop: typeof stop === "function" ? stop : null });
+  safeEmit();
+  return true;
+}
+
+export function unregisterLoop(name) {
+  if (!loopRegistry.has(name)) return;
+  loopRegistry.delete(name);
   safeEmit();
 }
 
-export function endLoop(name = "loop") {
-  const key = `__cog_loop_${name}`;
-  if (typeof window !== "undefined" && !window[key]) return;
-  if (typeof window !== "undefined") window[key] = false;
-  store.activeLoops = Math.max(0, store.activeLoops - 1);
+export function getActiveLoops() {
+  return Array.from(loopRegistry.keys());
+}
+
+export function stopAllLoops() {
+  for (const [name, info] of loopRegistry.entries()) {
+    try {
+      info.stop?.();
+    } catch (_) {
+      // ignore stop errors
+    }
+    loopRegistry.delete(name);
+  }
   safeEmit();
+}
+
+// Backwards-compatible aliases used across the codebase.
+export function beginLoop(name = "loop", stop) {
+  return registerLoop(name, stop);
+}
+
+export function endLoop(name = "loop") {
+  return unregisterLoop(name);
 }
