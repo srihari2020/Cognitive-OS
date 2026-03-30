@@ -1,9 +1,13 @@
-import React, { useEffect, useRef } from 'react';
-import Matter from 'matter-js';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useUI } from '../context/UIContext';
 import { registerLoop, unregisterLoop } from '../utils/runtimeMetrics';
 
-const MATH_SYMBOLS = ['∫', '∑', '∞', 'λ', '∂', '∅', '∇', '∏', '√', 'π'];
+const PARTICLE_MAP = {
+  HIGH: 14,
+  MEDIUM: 12,
+  LOW: 10,
+  OFF: 0,
+};
 
 export default function AntigravityBackground({
   isSearching,
@@ -15,33 +19,38 @@ export default function AntigravityBackground({
   qualityScalar = 1,
 }) {
   const { intensity, uiMode } = useUI();
-  const containerRef = useRef(null);
-  const debrisContainerRef = useRef(null);
   const orbitalLayerRef = useRef(null);
-  const blueSphereRef = useRef(null);
-  const redSphereRef = useRef(null);
-  const blueTrailRef = useRef(null);
-  const redTrailRef = useRef(null);
-  const turbulenceRef = useRef(null);
-  const displacementRef = useRef(null);
-  const engineRef = useRef(Matter.Engine.create());
+  const particleRefs = useRef([]);
+  const glowRef = useRef(null);
   const rafRef = useRef(null);
-  const debrisRefs = useRef({ bodies: [], elements: [] });
-  const viewportRef = useRef({ width: window.innerWidth, height: window.innerHeight });
-  const mouseRef = useRef({ x: 0, y: 0 });
-  const orbitalStateRef = useRef({ angle: 0, velocity: 0.02, energy: 0, lastTime: 0 });
-  const visualScaleRef = useRef(1);
-  const maxActiveMsRef = useRef(0);
+  const particleModelRef = useRef([]);
+  const viewportRef = useRef({ width: window.innerWidth, height: window.innerHeight, cx: window.innerWidth / 2, cy: window.innerHeight / 2 });
+  const mouseRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const runtimeRef = useRef({ isSearching: false, isProcessing: false, isMerging: false, intensity: 1, uiMode: 'smart', animationState: 'IDLE' });
+  const particleCount = PARTICLE_MAP[qualityLevel] ?? 12;
+  const particles = useMemo(() => Array.from({ length: particleCount }, (_, index) => index), [particleCount]);
+
+  const isActive = isSearching || isProcessing || isMerging || animationState !== 'IDLE';
 
   useEffect(() => {
     const handleMouseMove = (e) => {
-      mouseRef.current = { x: (e.clientX / window.innerWidth - 0.5) * 40, y: (e.clientY / window.innerHeight - 0.5) * 40 };
+      mouseRef.current = { x: e.clientX, y: e.clientY };
+      // Update glow position via CSS (idle-safe, no RAF needed)
+      if (glowRef.current) {
+        glowRef.current.style.transform = `translate3d(${e.clientX - 140}px, ${e.clientY - 140}px, 0)`;
+      }
     };
     const handleResize = () => {
-      viewportRef.current = { width: window.innerWidth, height: window.innerHeight };
+      viewportRef.current = {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        cx: window.innerWidth / 2,
+        cy: window.innerHeight / 2,
+      };
+      // Re-seed CSS particle positions on resize
+      seedCSSParticles();
     };
-    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('resize', handleResize);
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
@@ -53,66 +62,70 @@ export default function AntigravityBackground({
     runtimeRef.current = { isSearching, isProcessing, isMerging, intensity, uiMode, animationState, qualityLevel, qualityScalar };
   }, [isSearching, isProcessing, isMerging, intensity, uiMode, animationState, qualityLevel, qualityScalar]);
 
-  useEffect(() => {
-    const engine = engineRef.current;
-    const world = engine.world;
+  // Seed particle positions and CSS animation properties
+  const seedCSSParticles = () => {
     const { width, height } = viewportRef.current;
-    engine.gravity.y = 0.05; // Reduced gravity for stability
+    particleModelRef.current = particles.map((index) => {
+      const x = Math.random() * width;
+      const y = Math.random() * height;
+      const radius = 1.5 + Math.random() * 2.5;
+      const orbitRadius = 80 + Math.random() * 220;
+      const driftX = 10 + Math.random() * 30;
+      const driftY = 10 + Math.random() * 25;
+      const driftX2 = -(8 + Math.random() * 20);
+      const driftY2 = 5 + Math.random() * 18;
+      const duration = 12 + Math.random() * 18;
+      const delay = -(Math.random() * duration);
+      const opacity = 0.25 + Math.random() * 0.2;
+      const tint = index % 3 === 0
+        ? 'rgba(0,243,255,0.75)'
+        : index % 3 === 1
+          ? 'rgba(168,85,247,0.65)'
+          : 'rgba(0,200,255,0.55)';
 
-    Matter.World.clear(world);
+      return { x, y, radius, orbitRadius, driftX, driftY, driftX2, driftY2, duration, delay, opacity, tint,
+        orbitOffset: (Math.PI * 2 * index) / Math.max(1, particles.length),
+        speed: 0.00018 + Math.random() * 0.00022,
+        drift: 8 + Math.random() * 20,
+      };
+    });
+    particleRefs.current = particleRefs.current.slice(0, particles.length);
+  };
 
-    const walls = [
-      Matter.Bodies.rectangle(width / 2, height + 50, width, 100, { isStatic: true }),
-      Matter.Bodies.rectangle(width / 2, -50, width, 100, { isStatic: true }),
-      Matter.Bodies.rectangle(-50, height / 2, 100, height, { isStatic: true }),
-      Matter.Bodies.rectangle(width + 50, height / 2, 100, height, { isStatic: true })
-    ];
-    Matter.Composite.add(world, walls);
+  useEffect(() => {
+    seedCSSParticles();
+    // Apply CSS idle animation to each particle
+    applyCSSIdleMode();
+  }, [particles]);
 
-    const bodies = [];
-    const elements = [];
+  // Apply CSS-only animation (0 JS loops)
+  const applyCSSIdleMode = () => {
+    particleModelRef.current.forEach((p, index) => {
+      const el = particleRefs.current[index];
+      if (!el) return;
+      el.style.setProperty('--px', `${p.x}px`);
+      el.style.setProperty('--py', `${p.y}px`);
+      el.style.setProperty('--po', `${p.opacity}`);
+      el.style.setProperty('--drift-x', `${p.driftX}px`);
+      el.style.setProperty('--drift-y', `${p.driftY}px`);
+      el.style.setProperty('--drift-x2', `${p.driftX2}px`);
+      el.style.setProperty('--drift-y2', `${p.driftY2}px`);
+      el.style.width = `${p.radius * 2}px`;
+      el.style.height = `${p.radius * 2}px`;
+      el.style.background = p.tint;
+      el.style.animation = `particle-float ${p.duration}s ease-in-out ${p.delay}s infinite`;
+      el.style.opacity = `${p.opacity}`;
+    });
+  };
 
-    if (!debrisContainerRef.current) return;
-    debrisContainerRef.current.innerHTML = '';
-
-    const fragment = document.createDocumentFragment();
-
-    // STRICTLY REDUCED PARTICLE COUNT
-    const particleCount = qualityLevel === 'HIGH' ? 12 : qualityLevel === 'MEDIUM' ? 8 : qualityLevel === 'LOW' ? 4 : 0;
-    
-    for (let i = 0; i < particleCount; i++) {
-        const isBlue = i % 2 === 0;
-        const x = Math.random() * width;
-        const y = Math.random() * height;
-        
-        const body = Matter.Bodies.circle(x, y, 15, {
-          restitution: 0.6,
-          frictionAir: 0.05,
-          plugin: { group: isBlue ? 'blue' : 'red' }
-        });
-
-        const el = document.createElement('div');
-        el.className = `absolute pointer-events-none select-none font-mono font-black ${isBlue ? 'text-blue-500/40' : 'text-red-500/40'}`;
-        el.style.fontSize = '18px';
-        el.innerText = MATH_SYMBOLS[Math.floor(Math.random() * MATH_SYMBOLS.length)];
-        
-        fragment.appendChild(el);
-        elements.push(el);
-        bodies.push(body);
-    }
-
-    debrisContainerRef.current.appendChild(fragment);
-    Matter.Composite.add(world, bodies);
-    debrisRefs.current = { bodies, elements };
-
-    return () => {
-      Matter.Engine.clear(engine);
-      Matter.World.clear(world);
-      if (debrisContainerRef.current) {
-        debrisContainerRef.current.innerHTML = '';
-      }
-    };
-  }, [qualityLevel]);
+  // Clear CSS animation and switch to RAF-driven transforms
+  const clearCSSIdleMode = () => {
+    particleModelRef.current.forEach((_, index) => {
+      const el = particleRefs.current[index];
+      if (!el) return;
+      el.style.animation = 'none';
+    });
+  };
 
   const stopAnimationLoop = () => {
     if (rafRef.current) {
@@ -120,52 +133,61 @@ export default function AntigravityBackground({
       rafRef.current = null;
       unregisterLoop('background');
     }
-    orbitalStateRef.current.lastTime = 0;
   };
 
-  const updateLoop = () => {
-      const { width, height } = viewportRef.current;
-      const { bodies, elements } = debrisRefs.current;
-      if (!bodies || !elements) return;
+  const updateLoop = (now) => {
+    const { isSearching: searching, isProcessing: processing, isMerging: merging, intensity: uiIntensity, uiMode: mode, qualityScalar: qualityTarget, animationState: currentAnimationState } = runtimeRef.current;
+    const activeFrame = searching || processing || merging || currentAnimationState !== 'IDLE';
 
-      const { isSearching: searching, isProcessing: processing, isMerging: merging, intensity: uiIntensity, uiMode: mode, qualityScalar: qualityTarget } = runtimeRef.current;
-      
-      const activeFrame = searching || processing || merging || animationState !== 'IDLE';
-      
-      // STOP if not active or quality too low
-      if (!activeFrame || qualityScalar <= 0.05) {
-        stopAnimationLoop();
-        return;
-      }
+    if (!activeFrame || qualityTarget <= 0.05) {
+      // Switch back to CSS idle mode
+      stopAnimationLoop();
+      applyCSSIdleMode();
+      return;
+    }
 
-      const engine = engineRef.current;
-      const speedScale = 0.4; // Reduced global speed for stability
-      Matter.Engine.update(engine, (1000 / 60) * speedScale);
+    const { cx, cy } = viewportRef.current;
+    const pullX = (mouseRef.current.x - cx) * 0.03;
+    const pullY = (mouseRef.current.y - cy) * 0.03;
 
-      for (let i = 0; i < bodies.length; i++) {
-        const body = bodies[i];
-        const el = elements[i];
-        if (!el) continue;
+    particleModelRef.current.forEach((particle, index) => {
+      const element = particleRefs.current[index];
+      if (!element) return;
+      const orbit = particle.orbitOffset + now * particle.speed;
+      const speedMult = processing ? 1.6 : 1;
+      const x = cx + Math.cos(orbit * speedMult) * particle.orbitRadius + Math.sin(orbit * 2.2) * particle.drift + pullX;
+      const y = cy + Math.sin(orbit * speedMult) * (particle.orbitRadius * 0.42) + Math.cos(orbit * 1.8) * particle.drift + pullY;
+      const opacity = 0.28 + Math.sin(orbit * 2 + index) * 0.18 + Math.min(uiIntensity, 1) * 0.18;
+      const scale = mode === 'focus' ? 0.9 : processing ? 1.2 : 1;
+      element.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
+      element.style.opacity = `${Math.max(0.18, Math.min(0.78, opacity))}`;
+      element.style.background = particle.tint;
+      element.style.width = `${particle.radius * 2}px`;
+      element.style.height = `${particle.radius * 2}px`;
+    });
 
-        const px = body.position.x;
-        const py = body.position.y;
-        
-        // Use translate3d for hardware acceleration, avoid rotation if possible
-        el.style.transform = `translate3d(${px}px, ${py}px, 0)`;
-      }
+    if (orbitalLayerRef.current) {
+      orbitalLayerRef.current.style.transform = `translate3d(${pullX * 0.18}px, ${pullY * 0.18}px, 0)`;
+      orbitalLayerRef.current.style.opacity = `${Math.min(0.6, 0.22 + uiIntensity * 0.25)}`;
+    }
 
-      rafRef.current = requestAnimationFrame(updateLoop);
+    if (glowRef.current) {
+      glowRef.current.style.opacity = processing ? '0.38' : '0.22';
+    }
+
+    rafRef.current = requestAnimationFrame(updateLoop);
   };
 
   useEffect(() => {
-    const shouldRun = allowNewAnimations && (isSearching || isProcessing || isMerging || animationState !== 'IDLE');
-    
-    if (shouldRun && !rafRef.current) {
+    const shouldRunRAF = allowNewAnimations && isActive;
+    if (shouldRunRAF && !rafRef.current) {
+      clearCSSIdleMode();
       if (registerLoop('background', stopAnimationLoop)) {
         rafRef.current = requestAnimationFrame(updateLoop);
       }
-    } else if (!shouldRun) {
+    } else if (!shouldRunRAF) {
       stopAnimationLoop();
+      applyCSSIdleMode();
     }
     return () => stopAnimationLoop();
   }, [isSearching, isProcessing, isMerging, animationState, allowNewAnimations]);
@@ -173,10 +195,38 @@ export default function AntigravityBackground({
   useEffect(() => () => stopAnimationLoop(), []);
 
   return (
-    <div ref={containerRef} className="fixed inset-0 z-0 overflow-hidden bg-black pointer-events-none">
-      <div ref={debrisContainerRef} className="absolute inset-0" />
-      {/* Remove heavy filters and lighting layers */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/60 pointer-events-none" />
+    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+      {/* Mouse-reactive glow orb */}
+      <div
+        ref={glowRef}
+        className="mouse-glow absolute h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(0,243,255,0.14),transparent_64%)]"
+        style={{ opacity: 0.18 }}
+      />
+      {/* Orbital particle layer */}
+      <div ref={orbitalLayerRef} className="absolute inset-0" style={{ opacity: 0.5 }}>
+        {particles.map((particle) => (
+          <span
+            key={particle}
+            ref={(element) => {
+              particleRefs.current[particle] = element;
+            }}
+            className="absolute rounded-full will-change-transform"
+          />
+        ))}
+      </div>
+      {/* Ambient radial gradients */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,243,255,0.06),transparent_36%),radial-gradient(circle_at_bottom,rgba(168,85,247,0.06),transparent_38%)]" />
+      {/* Subtle grid overlay for JARVIS feel */}
+      <div
+        className="absolute inset-0 opacity-[0.015]"
+        style={{
+          backgroundImage: `
+            linear-gradient(rgba(0,243,255,0.3) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,243,255,0.3) 1px, transparent 1px)
+          `,
+          backgroundSize: '80px 80px',
+        }}
+      />
     </div>
   );
 }

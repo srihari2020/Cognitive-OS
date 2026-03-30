@@ -16,7 +16,7 @@ const ICON_MAP = {
 const DEFAULT_SUGGESTIONS = [
   { text: "Initialize System Scan", intent: "SCAN", icon: "Sparkles" },
   { text: "Check Neural Hub", intent: "STATUS", icon: "Cpu" },
-  { text: "Sync Core Sync", intent: "SYNC", icon: "Zap" }
+  { text: "Sync Core", intent: "SYNC", icon: "Zap" }
 ];
 
 const Suggestions = memo(({ onSelect, isSafeMode }) => {
@@ -57,7 +57,6 @@ const Suggestions = memo(({ onSelect, isSafeMode }) => {
       if (!isSafeMode) unregisterLoop('suggestionsPoll');
     };
 
-    // Poll every 4s. Only ONE interval exists per mount.
     if (isSafeMode) {
       tick();
       intervalRef.current = setInterval(tick, 4000);
@@ -69,7 +68,6 @@ const Suggestions = memo(({ onSelect, isSafeMode }) => {
     return cleanup;
   }, [isSafeMode, backendStatus]);
 
-  // Update suggestions if anticipation provides new ones
   useEffect(() => {
     if (anticipation && anticipation.suggestions && anticipation.suggestions.length > 0) {
       const list = anticipation.suggestions.map(s => ({ ...s, icon: ICON_MAP[s.intent] ? s.intent : 'DEFAULT' }));
@@ -77,48 +75,36 @@ const Suggestions = memo(({ onSelect, isSafeMode }) => {
     }
   }, [anticipation]);
 
+  if (!suggestions.length) return null;
+
   return (
-    <motion.div 
-      initial={isSafeMode ? undefined : { x: 100, opacity: 0 }}
-      animate={isSafeMode ? { opacity: 1 } : { x: 0, opacity: 1 }}
-      className="fixed right-6 top-1/2 -translate-y-1/2 flex flex-col gap-4 z-20"
-    >
+    <div className="flex flex-wrap items-center gap-2">
       {suggestions.map((item, index) => {
         const Icon = ICON_MAP[item.icon] || ICON_MAP[item.intent] || Cpu;
         const isAnticipated = anticipation && index === 0 && intensity > 0.5 && !isSafeMode;
 
         return (
-          <motion.div
+          <motion.button
             key={`${item.intent}-${index}`}
-            whileHover={isSafeMode ? undefined : { x: -10, scale: 1.05 }}
-            animate={isAnticipated ? {
-              x: -20,
-              scale: 1.1,
-              boxShadow: "0 0 20px rgba(0, 255, 255, 0.4)"
-            } : isSafeMode ? {
-              x: 0,
-              scale: 1,
-              opacity: 1
-            } : {
-              x: 0,
-              scale: 1
-            }}
+            type="button"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.05, duration: 0.2 }}
+            whileHover={{ scale: 1.04, y: -1 }}
+            whileTap={{ scale: 0.97 }}
             onClick={() => onSelect(item.text)}
-            className={`glass-panel p-3 flex items-center gap-3 cursor-pointer group min-w-[50px] transition-all duration-300
-                        ${isAnticipated ? 'min-w-[200px] border-neon-cyan/50' : isSafeMode ? 'min-w-[200px]' : 'hover:min-w-[200px]'}`}
+            className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-all duration-200 ${
+              isAnticipated
+                ? 'border-cyan-300/40 bg-cyan-400/10 text-cyan-200 shadow-[0_0_16px_rgba(0,243,255,0.15)]'
+                : 'border-white/8 bg-white/[0.04] text-white/55 hover:border-cyan-300/20 hover:bg-cyan-400/[0.06] hover:text-white/80'
+            }`}
           >
-            <div className={`p-2 rounded-lg bg-black/50 transition-colors 
-                            ${isAnticipated ? 'bg-neon-cyan/20' : 'group-hover:bg-neon-cyan/10'}`}>
-              <Icon className={`w-5 h-5 text-neon-cyan ${isAnticipated ? 'animate-pulse' : ''}`} />
-            </div>
-            <span className={`text-sm font-medium whitespace-nowrap overflow-hidden transition-opacity duration-300
-                            ${isAnticipated || isSafeMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-              {item.text}
-            </span>
-          </motion.div>
+            <Icon size={12} className={isAnticipated ? 'text-cyan-300' : 'text-white/40'} />
+            <span className="whitespace-nowrap">{item.text}</span>
+          </motion.button>
         );
       })}
-    </motion.div>
+    </div>
   );
 });
 

@@ -1,7 +1,8 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, session } = require("electron");
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, session, shell } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
 const fs = require("fs");
+const os = require("os");
 const log = require("electron-log/main");
 const { autoUpdater } = require("electron-updater");
 
@@ -11,7 +12,7 @@ app.disableHardwareAcceleration();
 const DEV_URL = process.env.ELECTRON_RENDERER_URL || "http://127.0.0.1:5173";
 const isDev = !app.isPackaged;
 const HOTKEY = "CommandOrControl+Shift+Space";
-const STABILITY_MODE = true;
+const STABILITY_MODE = false;
 const MODE_SIZES = {
   idle: { width: 1200, height: 800 },
   active: { width: 1200, height: 800 },
@@ -260,7 +261,7 @@ app.whenReady().then(() => {
           "script-src 'self'; " +
           "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
           "font-src 'self' https://fonts.gstatic.com; " +
-          "connect-src 'self' http://localhost:8000 http://127.0.0.1:* ws://127.0.0.1:* ws://localhost:*; " +
+          "connect-src 'self' http://localhost:8000 http://127.0.0.1:* ws://127.0.0.1:* ws://localhost:* https://api.openai.com https://generativelanguage.googleapis.com https://api.anthropic.com; " +
           "img-src 'self' data: https:;"
         ],
       },
@@ -316,6 +317,59 @@ ipcMain.handle("assistant:toggle", () => {
   mainWindow.focus();
   return { visible: true };
 });
+
+ipcMain.handle("assistant:open-external", async (_event, url) => {
+  if (!url || typeof url !== "string") return { ok: false, error: "Invalid URL" };
+  await shell.openExternal(url);
+  return { ok: true };
+});
+
+ipcMain.handle("assistant:open-path", async (_event, target) => {
+  const normalizedTarget = target === "documents"
+    ? app.getPath("documents")
+    : target === "downloads"
+      ? app.getPath("downloads")
+      : target;
+
+  if (!normalizedTarget || typeof normalizedTarget !== "string") {
+    return { ok: false, error: "Invalid path target" };
+  }
+
+  const result = await shell.openPath(normalizedTarget);
+  return { ok: !result, error: result || null };
+});
+
+ipcMain.handle("assistant:launch-app", (_event, appName) => {
+  if (!appName || typeof appName !== "string") {
+    return { ok: false, error: "Invalid app name" };
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const child = spawn("powershell.exe", ["-NoProfile", "-Command", `Start-Process "${appName}"`], {
+        windowsHide: true,
+        detached: true,
+        stdio: "ignore",
+      });
+      child.unref();
+      resolve({ ok: true });
+    } catch (error) {
+      resolve({ ok: false, error: error.message });
+    }
+  });
+});
+
+ipcMain.handle("assistant:get-system-info", () => ({
+  ok: true,
+  platform: os.platform(),
+  release: os.release(),
+  arch: os.arch(),
+  hostname: os.hostname(),
+  totalMemoryGb: Number((os.totalmem() / 1024 / 1024 / 1024).toFixed(1)),
+  freeMemoryGb: Number((os.freemem() / 1024 / 1024 / 1024).toFixed(1)),
+  cpuCores: os.cpus().length,
+  uptimeMinutes: Math.round(os.uptime() / 60),
+}));
 
 ipcMain.handle("assistant:get-runtime-config", () => ({
   stabilityMode: STABILITY_MODE,

@@ -2,18 +2,61 @@
 
 @theme {
   --color-neon-cyan: #00f3ff;
-  --color-neon-purple: #bc13fe;
+  --color-neon-purple: #a855f7;
   --color-neon-pink: #ff00ff;
   --color-neon-blue: #4d4dff;
-  
+  --color-neon-emerald: #34d399;
+
+  --color-glass-bg: rgba(255, 255, 255, 0.03);
+  --color-glass-bg-hover: rgba(255, 255, 255, 0.06);
+  --color-glass-border: rgba(255, 255, 255, 0.08);
+  --color-glass-border-hover: rgba(255, 255, 255, 0.14);
+
   --font-orbitron: "Orbitron", sans-serif;
   --font-inter: "Inter", sans-serif;
+  --font-rajdhani: "Rajdhani", sans-serif;
+
+  /* 8px grid spacing system */
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 40px;
+  --space-6: 48px;
+  --space-8: 64px;
+  --space-10: 80px;
+  --space-12: 96px;
+  --space-16: 128px;
 }
 
+/* ═══════════════════════════════════════════════════
+   BASE LAYER
+   ═══════════════════════════════════════════════════ */
 @layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 243, 255, 0.18) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 5px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(0, 243, 255, 0.18);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 243, 255, 0.32);
+  }
+
   body {
-    @apply bg-black text-white antialiased overflow-hidden;
+    @apply bg-black text-white antialiased;
     font-family: var(--font-inter);
+    overflow-x: hidden;
+    overflow-y: hidden;
   }
 
   body.electron-overlay {
@@ -27,15 +70,53 @@
   h1, h2, h3, .font-orbitron {
     font-family: var(--font-orbitron);
   }
+
+  .font-rajdhani {
+    font-family: var(--font-rajdhani);
+  }
 }
 
+/* ═══════════════════════════════════════════════════
+   COMPONENT LAYER
+   ═══════════════════════════════════════════════════ */
 @layer components {
+  /* Updated glass panel with refined glass aesthetic */
   .glass-panel {
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 1rem;
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--color-glass-border);
+    border-radius: 28px;
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .glass-panel:hover {
+    border-color: var(--color-glass-border-hover);
+  }
+
+  /* Premium glass with neon glow */
+  .glass-panel-neon {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(0, 243, 255, 0.12);
+    border-radius: 28px;
+    box-shadow:
+      0 0 20px rgba(0, 243, 255, 0.06),
+      0 8px 32px rgba(0, 0, 0, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .glass-panel-neon:hover {
+    border-color: rgba(0, 243, 255, 0.22);
+    box-shadow:
+      0 0 28px rgba(0, 243, 255, 0.1),
+      0 8px 32px rgba(0, 0, 0, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
 
   .neon-glow {
@@ -46,7 +127,7 @@
   .text-neon {
     text-shadow: 0 0 10px var(--color-neon-cyan);
   }
-  
+
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
@@ -54,9 +135,182 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* Thinking state — ambient glow (no spinner) */
+  .thinking-glow {
+    animation: thinking-breathe 1.8s ease-in-out infinite;
+    box-shadow:
+      0 0 24px rgba(168, 85, 247, 0.18),
+      0 0 48px rgba(168, 85, 247, 0.08);
+  }
+
+  /* Sticky input dock */
+  .sticky-input-dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+  }
+
+  /* Feed fade mask — top gradient that prevents overlap with header */
+  .feed-fade-top {
+    mask-image: linear-gradient(to bottom, transparent 0%, black 24px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 24px);
+  }
+
+  /* Action card pulse on execute */
+  .action-pulse-cyan {
+    animation: action-glow-cyan 0.6s ease-out;
+  }
+  .action-pulse-emerald {
+    animation: action-glow-emerald 0.6s ease-out;
+  }
+  .action-pulse-red {
+    animation: action-glow-red 0.6s ease-out;
+  }
+
+  /* Status dot animation */
+  .status-dot-online {
+    animation: status-pulse 2s ease-in-out infinite;
+  }
+
+  /* JARVIS horizontal divider */
+  .jarvis-divider {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(0, 243, 255, 0.25) 30%,
+      rgba(168, 85, 247, 0.2) 70%,
+      transparent 100%
+    );
+  }
+
+  /* Label badge */
+  .label-badge {
+    font-family: var(--font-rajdhani);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+
+  /* Mono label */
+  .mono-label {
+    font-family: "Inter", monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.45);
+  }
 }
 
-/* Custom Cursor Effects */
+/* ═══════════════════════════════════════════════════
+   KEYFRAME ANIMATIONS
+   ═══════════════════════════════════════════════════ */
+
+/* Idle particle float — CSS only, 0 JS loops */
+@keyframes particle-float {
+  0%, 100% {
+    transform: translate3d(var(--px), var(--py), 0) scale(1);
+    opacity: var(--po, 0.35);
+  }
+  25% {
+    transform: translate3d(
+      calc(var(--px) + var(--drift-x, 15px)),
+      calc(var(--py) - var(--drift-y, 20px)),
+      0
+    ) scale(1.08);
+    opacity: calc(var(--po, 0.35) + 0.12);
+  }
+  50% {
+    transform: translate3d(
+      calc(var(--px) + var(--drift-x2, -10px)),
+      calc(var(--py) + var(--drift-y2, 12px)),
+      0
+    ) scale(0.95);
+    opacity: var(--po, 0.35);
+  }
+  75% {
+    transform: translate3d(
+      calc(var(--px) - var(--drift-x, 15px)),
+      calc(var(--py) + var(--drift-y, 20px)),
+      0
+    ) scale(1.04);
+    opacity: calc(var(--po, 0.35) + 0.08);
+  }
+}
+
+/* Orb idle pulse */
+@keyframes pulse-idle {
+  0%, 100% { transform: scale(1); opacity: 0.65; }
+  50% { transform: scale(1.04); opacity: 0.85; }
+}
+
+/* Orb energy charge on hover */
+@keyframes energy-charge {
+  0% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.7; }
+}
+
+/* Thinking breathe */
+@keyframes thinking-breathe {
+  0%, 100% { box-shadow: 0 0 20px rgba(168, 85, 247, 0.12), 0 0 40px rgba(168, 85, 247, 0.05); }
+  50% { box-shadow: 0 0 32px rgba(168, 85, 247, 0.25), 0 0 56px rgba(168, 85, 247, 0.1); }
+}
+
+/* Shockwave ring */
+@keyframes shockwave-expand {
+  0% { transform: scale(0.15); opacity: 0.85; }
+  100% { transform: scale(8); opacity: 0; }
+}
+
+/* Action glow feedback */
+@keyframes action-glow-cyan {
+  0% { box-shadow: 0 0 0 rgba(0, 243, 255, 0); }
+  30% { box-shadow: 0 0 24px rgba(0, 243, 255, 0.3); }
+  100% { box-shadow: 0 0 0 rgba(0, 243, 255, 0); }
+}
+@keyframes action-glow-emerald {
+  0% { box-shadow: 0 0 0 rgba(52, 211, 153, 0); }
+  30% { box-shadow: 0 0 24px rgba(52, 211, 153, 0.3); }
+  100% { box-shadow: 0 0 0 rgba(52, 211, 153, 0); }
+}
+@keyframes action-glow-red {
+  0% { box-shadow: 0 0 0 rgba(248, 113, 113, 0); }
+  30% { box-shadow: 0 0 24px rgba(248, 113, 113, 0.3); }
+  100% { box-shadow: 0 0 0 rgba(248, 113, 113, 0); }
+}
+
+/* Status dot pulse */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px currentColor; }
+  50% { opacity: 0.55; box-shadow: 0 0 8px currentColor; }
+}
+
+/* Typing cursor blink */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Mic listening ring */
+@keyframes mic-ring-pulse {
+  0% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.35); opacity: 0.2; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* Mouse-reactive glow follow */
+.mouse-glow {
+  transition: transform 0.15s ease-out, opacity 0.3s ease;
+  will-change: transform, opacity;
+}
+
+/* ═══════════════════════════════════════════════════
+   CUSTOM CURSOR
+   ═══════════════════════════════════════════════════ */
 #custom-cursor {
   position: fixed;
   top: 0;

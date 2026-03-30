@@ -1,20 +1,30 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useRef, useState } from 'react';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
+import {
+  Cpu,
+  FolderOpen,
+  Globe,
+  Minimize2,
+  Search,
+  Settings as SettingsIcon,
+  Sparkles,
+} from 'lucide-react';
 import AntigravityBackground from './components/AntigravityBackground';
 import GojoLogo from './components/GojoLogo';
 import CustomCursor from './components/CustomCursor';
 import InputBox from './components/InputBox';
 import ResponsePanel from './components/ResponsePanel';
 import Suggestions from './components/Suggestions';
-import PurpleBlast from './components/PurpleBlast';
+import DomainExpansion from './components/DomainExpansion';
 import StabilityDashboard from './components/StabilityDashboard';
-import { Minimize2 } from 'lucide-react';
+import SettingsPanel from './components/SettingsPanel';
+import { commandRouter } from './services/commandRouter';
 import { commandService } from './services/api';
+import { aiRouter } from './services/aiRouter';
 import { UIProvider, useUI } from './context/UIContext';
 import { getActiveLoops, stopAllLoops } from './utils/runtimeMetrics';
 
-// CRITICAL: Hard safe mode must mount no effects, loops, or listeners.
-const HARD_SAFE_MODE = false; // Transitioned to PARTIAL SAFE MODE
+const HARD_SAFE_MODE = false;
 const PARTIAL_SAFE_MODE = true;
 
 const INITIAL_FEATURE_FLAGS = {
@@ -24,31 +34,54 @@ const INITIAL_FEATURE_FLAGS = {
   enableCursor: true,
 };
 
+const ACTION_SHORTCUTS = [
+  { id: 'chrome', title: 'Open Chrome', subtitle: 'Browser shell', icon: Globe, command: 'open chrome' },
+  { id: 'youtube', title: 'Open YouTube', subtitle: 'Media portal', icon: Sparkles, command: 'open youtube' },
+  { id: 'google', title: 'Search Google', subtitle: 'Query URL', icon: Search, command: 'search google for Cognitive OS' },
+  { id: 'files', title: 'Open Files', subtitle: 'Explorer', icon: FolderOpen, command: 'open files' },
+  { id: 'system', title: 'System Info', subtitle: 'OS stats', icon: Cpu, command: 'system info' },
+];
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const createEntry = (text, role = 'assistant', extra = {}) => ({
+  id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  text,
+  role,
+  ...extra,
+});
+
+const getLocalSystemInfo = () => ({
+  platform: navigator.platform || 'unknown',
+  release: navigator.userAgent || 'browser',
+  arch: 'web',
+  hostname: window.location.hostname || 'local',
+  totalMemoryGb: navigator.deviceMemory || 0,
+  freeMemoryGb: navigator.deviceMemory || 0,
+  cpuCores: navigator.hardwareConcurrency || 0,
+  uptimeMinutes: 0,
+});
+
 function AppContent() {
   const [featureFlags, setFeatureFlags] = useState(INITIAL_FEATURE_FLAGS);
-  
-  useEffect(() => {
-    console.log('[CognitiveOS] AppContent mount (PARTIAL SAFE MODE)');
-    console.log(`[CognitiveOS] Initial Feature Flags:`, INITIAL_FEATURE_FLAGS);
-    return () => console.log('[CognitiveOS] AppContent unmount');
-  }, []);
-
-  const { uiMode, setUiMode, intensity, fps, isUserActive, attentionLevel, startPerformanceSample, syncAnticipationNow, cleanupSignal, performanceTier, visualQuality, qualityScalar, backendStatus } = useUI();
-  const isBackendOffline = backendStatus === 'OFFLINE';
   const [responses, setResponses] = useState([
-    { id: 'initial', text: 'SYSTEM ONLINE. Adaptive protocols engaged.' }
+    createEntry('System online. Awaiting command stream.', 'system'),
   ]);
+  const [draft, setDraft] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
-  const [isShowingBlast, setIsShowingBlast] = useState(false);
+  const [isDomainActive, setIsDomainActive] = useState(false);
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [wakeStartSignal, setWakeStartSignal] = useState(0);
   const [animationState, setAnimationState] = useState('IDLE');
   const [fpsDropCount, setFpsDropCount] = useState(0);
-  const [assistantMode, setAssistantMode] = useState(Boolean(window.electronAssistant) ? 'idle' : 'active');
+  const [assistantMode, setAssistantMode] = useState(!!window.electronAssistant ? 'idle' : 'active');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [idleIntentLevel, setIdleIntentLevel] = useState('low');
   const [systemStatus, setSystemStatus] = useState({ status: 'ACTIVE', latency: '1MS' });
+  const [stabilityMode, setStabilityMode] = useState(false);
+  const [lastActionTime, setLastActionTime] = useState(null);
   const scrollRef = useRef(null);
   const lifecycleTimeoutsRef = useRef([]);
   const orbButtonRef = useRef(null);
@@ -62,81 +95,79 @@ function AppContent() {
     level: 'low',
   });
   const isElectronOverlay = Boolean(window.electronAssistant);
-  const [stabilityMode, setStabilityMode] = useState(false);
   const isDev = import.meta.env.DEV;
+  const {
+    uiMode,
+    setUiMode,
+    intensity,
+    fps,
+    attentionLevel,
+    startPerformanceSample,
+    syncAnticipationNow,
+    cleanupSignal,
+    performanceTier,
+    visualQuality,
+    qualityScalar,
+    backendStatus,
+  } = useUI();
+  const isBackendOffline = backendStatus === 'OFFLINE';
+  const providerInfo = aiRouter.getProviderInfo();
 
   useEffect(() => {
-    // Loop Safety Check
+    console.log('[CognitiveOS] AppContent mount');
+    return () => console.log('[CognitiveOS] AppContent unmount');
+  }, []);
+
+  useEffect(() => {
     const activeLoops = getActiveLoops();
-    // Allow 'orb' loop only while processing
-    const unexpectedLoops = activeLoops.filter(name => isProcessing ? (name !== 'orb') : true);
-    
+    const shouldAllowBackground = featureFlags.enableBackground && (isSearching || isProcessing || isMerging || animationState !== 'IDLE');
+    const unexpectedLoops = activeLoops.filter((name) => !(shouldAllowBackground && name === 'background'));
+
     if (unexpectedLoops.length > 0) {
-      console.warn(`[CognitiveOS] SAFETY ALERT: ${unexpectedLoops.length} unexpected loops found: ${unexpectedLoops.join(', ')}. Stopping all.`);
       stopAllLoops();
     }
-    
-    // Performance Guard Monitoring
+
     if (fps > 0 && fps < 30) {
-      setFpsDropCount(prev => {
+      setFpsDropCount((prev) => {
         const next = prev + 1;
-        if (next >= 5) { // Increased to 5 checks for better stability
-          if (featureFlags.enableOrbAnimation || featureFlags.enableBackground) {
-            console.warn(`[CognitiveOS] PERFORMANCE GUARD: Persistent low FPS detected (${fps}). Throttling animations.`);
-            setFeatureFlags(prevFlags => ({
-              ...prevFlags,
-              enableOrbAnimation: false,
-              enableBackground: false
-            }));
-          }
+        if (next >= 4) {
+          setFeatureFlags((current) => ({
+            ...current,
+            enableBackground: false,
+            enableCursor: false,
+          }));
         }
         return next;
       });
-    } else if (fps >= 45) { // Lower recovery threshold
+    } else if (fps >= 45) {
       setFpsDropCount(0);
-      if (!featureFlags.enableOrbAnimation || !featureFlags.enableBackground) {
-        setFeatureFlags(prevFlags => ({
-          ...prevFlags,
-          enableOrbAnimation: INITIAL_FEATURE_FLAGS.enableOrbAnimation,
-          enableBackground: INITIAL_FEATURE_FLAGS.enableBackground
-        }));
-      }
-    }
-
-    if (activeLoops.length > 2) { // Lower threshold for PARTIAL SAFE MODE
-      console.warn(`[CognitiveOS] PERFORMANCE GUARD: Loop count high (${activeLoops.length}). Stopping animations.`);
-      setFeatureFlags(prev => ({
-        ...prev,
-        enableOrbAnimation: false,
-        enableBackground: false
+      setFeatureFlags((current) => ({
+        ...current,
+        enableBackground: INITIAL_FEATURE_FLAGS.enableBackground,
+        enableCursor: INITIAL_FEATURE_FLAGS.enableCursor,
       }));
     }
-  }, [fps, featureFlags, isProcessing]);
+  }, [animationState, featureFlags.enableBackground, fps, isMerging, isProcessing, isSearching]);
 
-  // Periodic Performance Monitoring
   useEffect(() => {
     const intervalId = setInterval(() => {
       const activeLoops = getActiveLoops();
-      
-      // Cleanup verification: If no animation is running, loops must be 0
-      const isAnimating = isSearching || isProcessing || isMerging || isShowingBlast || animationState !== 'IDLE';
-      if (!isAnimating && activeLoops.length > 0) {
-        // Only suggestionsPoll is allowed if not in safe mode
-        const heavyLoops = PARTIAL_SAFE_MODE ? activeLoops : activeLoops.filter(l => l !== 'suggestionsPoll');
-        if (heavyLoops.length > 0) {
-          stopAllLoops();
-        }
+      const isActive = isSearching || isProcessing || isMerging || animationState !== 'IDLE';
+      if (!isActive && activeLoops.length > 0) {
+        stopAllLoops();
       }
-    }, 5000);
+    }, 3000);
+
     return () => clearInterval(intervalId);
-  }, [fps, featureFlags, isSearching, isProcessing, isMerging, isShowingBlast, animationState, responses.length]);
+  }, [animationState, isMerging, isProcessing, isSearching]);
 
   const clearLifecycleTimeouts = () => {
-    lifecycleTimeoutsRef.current.forEach((id) => clearTimeout(id));
+    lifecycleTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
     lifecycleTimeoutsRef.current = [];
   };
 
   useEffect(() => () => clearLifecycleTimeouts(), []);
+
   useEffect(() => () => {
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
@@ -145,20 +176,21 @@ function AppContent() {
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
     }
-    
-    // Performance State Cleanup: Limit history size to 30 entries
+
     if (responses.length > 30) {
-      setResponses(prev => prev.slice(-30));
+      setResponses((current) => current.slice(-30));
     }
   }, [responses]);
 
   useEffect(() => {
-    // Automatic cleanup when governor enters critical tier.
     clearLifecycleTimeouts();
     setIsMerging(false);
-    setIsShowingBlast(false);
+    setIsDomainActive(false);
     if (performanceTier === 'critical') {
       setAnimationState('IDLE');
     }
@@ -167,19 +199,23 @@ function AppContent() {
   useEffect(() => {
     let mounted = true;
     if (!window.electronAssistant?.getRuntimeConfig) return;
-    window.electronAssistant.getRuntimeConfig().then((cfg) => {
+
+    window.electronAssistant.getRuntimeConfig().then((config) => {
       if (!mounted) return;
-      setStabilityMode(Boolean(cfg?.stabilityMode));
-      if (cfg?.stabilityMode) {
+      setStabilityMode(Boolean(config?.stabilityMode));
+      if (config?.stabilityMode) {
         setAssistantMode('active');
       }
     }).catch(() => {});
-    return () => { mounted = false; };
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
     if (!isElectronOverlay) return;
-    const nextMode = (isProcessing || isMerging || isShowingBlast) ? 'processing' : assistantMode;
+    const nextMode = (isProcessing || isMerging || isDomainActive) ? 'processing' : assistantMode;
     window.electronAssistant.setMode(nextMode);
     if (stabilityMode || nextMode !== 'idle') {
       window.electronAssistant.setOrbProximity(true);
@@ -188,13 +224,13 @@ function AppContent() {
       window.electronAssistant.setOrbProximity(false);
       window.electronAssistant.setClickThrough(true);
     }
-  }, [isElectronOverlay, assistantMode, isProcessing, isMerging, isShowingBlast, stabilityMode]);
+  }, [assistantMode, isElectronOverlay, isMerging, isProcessing, isDomainActive, stabilityMode]);
 
   useEffect(() => {
-    if (!isElectronOverlay || assistantMode !== 'idle' || stabilityMode || (PARTIAL_SAFE_MODE && !featureFlags.enableOrbAnimation)) return;
+    if (!isElectronOverlay || assistantMode !== 'idle' || stabilityMode || !featureFlags.enableOrbAnimation) return;
     let frameId = null;
     let pendingMouse = null;
-    const toUnit = (v) => Math.max(0, Math.min(1, v));
+    const toUnit = (value) => Math.max(0, Math.min(1, value));
 
     const updateIntentFromMouse = (event) => {
       const orb = orbButtonRef.current;
@@ -203,34 +239,26 @@ function AppContent() {
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
       const now = performance.now();
-
-      const prevTs = idleIntentRef.current.lastTs || now;
-      const dt = Math.max(1, now - prevTs);
-      const dxPrev = event.clientX - idleIntentRef.current.lastX;
-      const dyPrev = event.clientY - idleIntentRef.current.lastY;
-      const velocity = Math.sqrt(dxPrev * dxPrev + dyPrev * dyPrev) / dt;
-
+      const previousTimestamp = idleIntentRef.current.lastTs || now;
+      const delta = Math.max(1, now - previousTimestamp);
+      const dxPrevious = event.clientX - idleIntentRef.current.lastX;
+      const dyPrevious = event.clientY - idleIntentRef.current.lastY;
+      const velocity = Math.sqrt(dxPrevious * dxPrevious + dyPrevious * dyPrevious) / delta;
       const dx = event.clientX - centerX;
       const dy = event.clientY - centerY;
       const distance = Math.sqrt(dx * dx + dy * dy);
       const orbRadius = Math.max(rect.width, rect.height) * 0.5;
-
       const hoverBand = orbRadius * 2.2;
-      const inHoverBand = distance <= hoverBand;
-      const hoverMs = inHoverBand
-        ? Math.min(4000, idleIntentRef.current.hoverMs + dt)
-        : Math.max(0, idleIntentRef.current.hoverMs - dt * 1.5);
-
-      // Distance closer => stronger intent, velocity slower near orb => stronger intent.
+      const hoverMs = distance <= hoverBand
+        ? Math.min(4000, idleIntentRef.current.hoverMs + delta)
+        : Math.max(0, idleIntentRef.current.hoverMs - delta * 1.5);
       const distanceScore = toUnit(1 - (distance - orbRadius) / (hoverBand - orbRadius));
       const velocityScore = toUnit(1 - velocity / 1.2);
       const hoverScore = toUnit(hoverMs / 1200);
-
       const weightedScore = (distanceScore * 0.55) + (velocityScore * 0.2) + (hoverScore * 0.25);
       const smoothedScore = idleIntentRef.current.smoothedScore * 0.85 + weightedScore * 0.15;
 
       let nextLevel = idleIntentRef.current.level;
-      // Hysteresis thresholds prevent flicker.
       if (nextLevel === 'low' && smoothedScore > 0.58) nextLevel = 'medium';
       else if (nextLevel === 'medium' && smoothedScore > 0.82) nextLevel = 'high';
       else if (nextLevel === 'high' && smoothedScore < 0.72) nextLevel = 'medium';
@@ -245,7 +273,7 @@ function AppContent() {
         level: nextLevel,
       };
 
-      setIdleIntentLevel((prev) => (prev === nextLevel ? prev : nextLevel));
+      setIdleIntentLevel((current) => (current === nextLevel ? current : nextLevel));
 
       const nearOrb = nextLevel !== 'low';
       if (nearOrb !== lastOrbNearRef.current) {
@@ -254,21 +282,22 @@ function AppContent() {
       }
 
       if (nextLevel === 'high') {
-        window.electronAssistant.setOrbProximity(true);
         window.electronAssistant.setClickThrough(false);
         setAssistantMode('active');
       }
     };
 
-    const onMouseMove = (e) => {
-      pendingMouse = e;
+    const onMouseMove = (event) => {
+      pendingMouse = event;
       if (frameId) return;
       frameId = requestAnimationFrame(() => {
         frameId = null;
         if (pendingMouse) updateIntentFromMouse(pendingMouse);
       });
     };
+
     window.addEventListener('mousemove', onMouseMove, { passive: true });
+
     return () => {
       if (frameId) cancelAnimationFrame(frameId);
       window.removeEventListener('mousemove', onMouseMove);
@@ -284,20 +313,23 @@ function AppContent() {
       setIdleIntentLevel('low');
       window.electronAssistant.setOrbProximity(false);
     };
-  }, [isElectronOverlay, assistantMode, stabilityMode]);
+  }, [assistantMode, featureFlags.enableOrbAnimation, isElectronOverlay, stabilityMode]);
 
   useEffect(() => {
     if (!isElectronOverlay) return;
-    const unsubscribe = window.electronAssistant.onVisibilityChange((payload) => {
+
+    const unsubscribeVisibility = window.electronAssistant.onVisibilityChange((payload) => {
       if (payload?.visible) {
         setAssistantMode('active');
       }
     });
+
     const unsubscribeUpdate = window.electronAssistant.onUpdateReady(() => {
-      setSystemStatus((prev) => ({ ...prev, status: 'UPDATE READY' }));
+      setSystemStatus((current) => ({ ...current, status: 'UPDATE READY' }));
     });
+
     return () => {
-      unsubscribe?.();
+      unsubscribeVisibility?.();
       unsubscribeUpdate?.();
     };
   }, [isElectronOverlay]);
@@ -305,11 +337,12 @@ function AppContent() {
   useEffect(() => {
     if (stabilityMode || PARTIAL_SAFE_MODE || isBackendOffline) return;
     let mounted = true;
+
     const intervalId = setInterval(async () => {
-      if (isProcessing || isMerging || isShowingBlast) return;
+      if (isProcessing || isMerging || isDomainActive) return;
       const wake = await commandService.consumeWakeWord();
       if (!mounted || !wake?.triggered) return;
-      setWakeStartSignal((prev) => prev + 1);
+      setWakeStartSignal((current) => current + 1);
       setAnimationState('PROCESSING');
     }, 1500);
 
@@ -317,280 +350,444 @@ function AppContent() {
       mounted = false;
       clearInterval(intervalId);
     };
-  }, [isProcessing, isMerging, isShowingBlast, stabilityMode, isBackendOffline]);
+  }, [isBackendOffline, isMerging, isProcessing, isDomainActive, stabilityMode]);
+
+  const pushResponse = (entry) => {
+    setResponses((current) => [...current, entry].slice(-30));
+  };
+
+  const finalizeInteraction = () => {
+    setIsMerging(false);
+    setAnimationState('COMPLETE');
+    const timeoutId = setTimeout(() => setAnimationState('IDLE'), 320);
+    lifecycleTimeoutsRef.current.push(timeoutId);
+  };
+
+  const triggerDomainExpansion = async () => {
+    if (qualityScalar <= 0.18) return;
+    setAnimationState('EXECUTING');
+    setIsDomainActive(true);
+    await sleep(1200); // Wait for the full 4 phase 1200ms sequence
+    setIsDomainActive(false);
+  };
 
   const speakResponse = (text) => {
     if (!window.speechSynthesis || !text) return;
-    const safeText = text.replace(/^\[JARVIS\]:\s*/i, '').trim();
+    const safeText = text.replace(/^\[[^\]]+\]:\s*/i, '').trim();
     if (!safeText) return;
+    // Confident JARVIS tone — first sentence only, short and punchy
+    const conciseText = safeText.split(/(?<=[.!?])\s+/)[0].slice(0, 140);
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(safeText);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.volume = 0.9;
-    window.speechSynthesis.speak(utterance);
+    // Brief delay to sync with blast animation
+    setTimeout(() => {
+      const utterance = new SpeechSynthesisUtterance(conciseText);
+      utterance.rate = 1.1;
+      utterance.pitch = 0.85;
+      utterance.volume = 0.88;
+      window.speechSynthesis.speak(utterance);
+    }, 200);
+  };
+
+
+
+  const resolveAssistantResponse = async (prompt) => {
+    if (!isBackendOffline) {
+      try {
+        const result = await commandService.send(prompt);
+        return {
+          text: result?.action?.message || 'Processing complete.',
+          provider: 'backend',
+          role: 'assistant',
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    const aiResponse = await aiRouter.route(prompt);
+    return {
+      text: aiResponse.text,
+      provider: aiResponse.provider,
+      role: aiResponse.status === 'ERROR' ? 'system' : 'assistant',
+    };
   };
 
   const handleSendCommand = async (text) => {
+    const prompt = text.trim();
+    if (!prompt || isProcessing) return;
+
     clearLifecycleTimeouts();
     if (isElectronOverlay) setAssistantMode('active');
+    setDraft('');
     setIsSearching(false);
     setIsProcessing(true);
     setAnimationState('PROCESSING');
     startPerformanceSample(2200);
     syncAnticipationNow();
-    
-    if (isBackendOffline) {
-      setResponses(prev => [...prev, {
-        id: `err-${Date.now()}`,
-        text: `[SYSTEM]: Connection lost. Neural core is in local fallback mode.`
-      }]);
-      return;
-    }
+    pushResponse(createEntry(prompt, 'user'));
 
     try {
-      const result = await commandService.send(text);
-      
-      // Stage 1: Trigger Energy Convergence (Merging/Execution)
-      setAnimationState('EXECUTING');
-      if (!stabilityMode && visualQuality !== 'OFF') {
-        setIsMerging(true);
-        await new Promise(r => setTimeout(r, 1000)); // Convergence duration
+      const localRoute = await commandRouter.route(prompt);
+      if (localRoute.handled) {
+        await triggerDomainExpansion();
+        pushResponse(createEntry(`[JARVIS]: ${localRoute.message}`, 'action'));
+        speakResponse(localRoute.message);
+        setSystemStatus((current) => ({ ...current, status: 'ACTION COMPLETE' }));
+        return;
       }
 
-      // Stage 2: Trigger The Hollow Purple Blast
-      if (!stabilityMode && qualityScalar > 0.55) {
-        setIsShowingBlast(true);
-        await new Promise(r => setTimeout(r, 800)); // Blast duration
-      }
-
-      // Stage 3: Show Response / Open App
-      const newResponse = {
-        id: Math.random().toString(36).substr(2, 9),
-        text: `[JARVIS]: ${result.action.message || 'Processing complete.'}`,
-        intent: result.intent
-      };
-      setResponses(prev => [...prev, newResponse]);
-      speakResponse(newResponse.text);
-      
-      // Reset cinematic states
-      setIsShowingBlast(false);
-      setIsMerging(false);
-      setAnimationState('COMPLETE');
-      const timeoutId = setTimeout(() => setAnimationState('IDLE'), 500);
-      lifecycleTimeoutsRef.current.push(timeoutId);
+      const result = await resolveAssistantResponse(prompt);
+      await triggerDomainExpansion();
+      const prefix = result.provider && result.provider !== 'backend' ? `[${result.provider}]` : '[JARVIS]';
+      pushResponse(createEntry(`${prefix}: ${result.text}`, result.role));
+      speakResponse(result.text);
+      setSystemStatus((current) => ({ ...current, status: result.provider === 'backend' ? 'ONLINE' : `${result.provider.toUpperCase()} LINK` }));
     } catch (error) {
-      setResponses(prev => [...prev, {
-        id: `err-${Date.now()}`,
-        text: `COMM LINK ERROR: ${error.message}`
-      }]);
-      speakResponse(`Communication link error: ${error.message}`);
-      setAnimationState('COMPLETE');
-      const timeoutId = setTimeout(() => setAnimationState('IDLE'), 500);
-      lifecycleTimeoutsRef.current.push(timeoutId);
+      await triggerDomainExpansion();
+      const message = error?.message || 'Unable to process the request.';
+      pushResponse(createEntry(`COMM LINK ERROR: ${message}`, 'system'));
+      speakResponse(message);
+      setSystemStatus((current) => ({ ...current, status: 'LINK ERROR' }));
     } finally {
+      finalizeInteraction();
       setIsProcessing(false);
       startPerformanceSample(1200);
       syncAnticipationNow();
     }
   };
 
+  const handleShortcut = (shortcut) => {
+    if (shortcut.id === 'google') {
+      const query = draft.trim() || 'Cognitive OS';
+      handleSendCommand(`search google for ${query}`);
+      return;
+    }
+    handleSendCommand(shortcut.command);
+  };
+
+  const renderIdleOrb = () => (
+    <Motion.button
+      ref={orbButtonRef}
+      type="button"
+      onClick={async () => {
+        setAssistantMode('active');
+        triggerDomainExpansion();
+      }}
+      whileTap={{ scale: 0.96 }}
+      className={`absolute inset-0 m-auto flex h-28 w-28 items-center justify-center rounded-full border bg-black/65 transition-all duration-300 ${
+        idleIntentLevel === 'high'
+          ? 'border-cyan-300/85 shadow-[0_0_64px_rgba(34,211,238,0.45)]'
+          : idleIntentLevel === 'medium'
+            ? 'border-cyan-300/55 shadow-[0_0_40px_rgba(34,211,238,0.28)]'
+            : 'border-white/12 shadow-[0_0_24px_rgba(34,211,238,0.16)]'
+      }`}
+      aria-label="Activate assistant"
+    >
+      <Motion.div
+        animate={{
+          scale: idleIntentLevel === 'high' ? [1, 1.2, 1] : [1, 1.06, 1],
+          opacity: idleIntentLevel === 'high' ? [0.6, 1, 0.6] : [0.45, 0.75, 0.45],
+        }}
+        transition={{ duration: idleIntentLevel === 'high' ? 0.7 : 1.8, repeat: Infinity, ease: 'easeInOut' }}
+        className="h-10 w-10 rounded-full bg-cyan-300"
+      />
+    </Motion.button>
+  );
+
   return (
-    <motion.div 
-      animate={stabilityMode || PARTIAL_SAFE_MODE ? undefined : { scale: isShowingBlast ? 0.98 : 1 }}
-      transition={stabilityMode || PARTIAL_SAFE_MODE ? undefined : { duration: 0.2 }}
-      className={`relative overflow-hidden flex flex-col selection:bg-purple-500/30 ${
+    <Motion.div
+      animate={{ scale: isDomainActive ? 0.993 : 1 }}
+      transition={{ duration: 0.18 }}
+      className={`relative flex min-h-screen flex-col overflow-hidden selection:bg-purple-500/30 ${
         isElectronOverlay
-          ? 'w-full h-full rounded-[22px] border border-white/10 bg-black/45 backdrop-blur-xl shadow-[0_20px_60px_rgba(0,0,0,0.55)]'
-          : 'w-screen h-screen bg-black'
+          ? 'h-full w-full rounded-[22px] border border-white/10 bg-black/55 shadow-[0_20px_60px_rgba(0,0,0,0.55)]'
+          : 'w-screen bg-black'
       }`}
     >
-      {PARTIAL_SAFE_MODE && (
-        <div className="absolute top-2 left-2 z-[100] px-2 py-1 rounded-md border border-yellow-500/50 bg-yellow-500/10 font-mono text-[8px] text-yellow-500 tracking-widest pointer-events-none">
-          PARTIAL SAFE MODE ACTIVE
-        </div>
-      )}
       {!stabilityMode && featureFlags.enableCursor && qualityScalar > 0.35 && <CustomCursor />}
 
-      {isElectronOverlay && assistantMode === 'idle' && featureFlags.enableOrbAnimation ? (
-        <button
-          ref={orbButtonRef}
-          type="button"
-          onClick={() => setAssistantMode('active')}
-          className={`absolute inset-0 m-auto w-24 h-24 rounded-full bg-black/60 flex items-center justify-center cursor-pointer transition-all duration-300 ${
-            idleIntentLevel === 'medium'
-              ? 'border border-neon-cyan/70 shadow-[0_0_58px_rgba(0,243,255,0.48)]'
-              : 'border border-neon-cyan/40 shadow-[0_0_40px_rgba(0,243,255,0.35)]'
-          }`}
-          aria-label="Activate assistant"
-        >
-          <div className={`w-8 h-8 rounded-full bg-neon-cyan/80 shadow-[0_0_24px_rgba(0,243,255,0.8)] ${
-            idleIntentLevel === 'low' ? 'animate-pulse' : 'animate-ping'
-          }`} />
-        </button>
-      ) : isElectronOverlay && assistantMode === 'idle' ? (
-        <div className="absolute inset-0 m-auto w-12 h-12 rounded-full border border-neon-cyan/40 bg-black/40 flex items-center justify-center">
-           <div className="w-2 h-2 rounded-full bg-neon-cyan" />
-        </div>
+      {isElectronOverlay && assistantMode === 'idle' ? (
+        renderIdleOrb()
       ) : (
         <>
-          {/* Cinematic Physics Background */}
-          {!stabilityMode && featureFlags.enableBackground && visualQuality !== 'OFF' && (
+          {/* Always-on background — renders in LOW-COST CSS mode when idle */}
+          {featureFlags.enableBackground && visualQuality !== 'OFF' && (
             <AntigravityBackground
               isSearching={isSearching}
               isProcessing={isProcessing}
               isMerging={isMerging}
               animationState={animationState}
-              allowNewAnimations={visualQuality !== 'OFF'}
+              allowNewAnimations={visualQuality !== 'OFF' && featureFlags.enableBackground}
               qualityLevel={visualQuality}
               qualityScalar={qualityScalar}
             />
           )}
-          
-          {/* Fullscreen Transition Blast */}
-          {!stabilityMode && !PARTIAL_SAFE_MODE && qualityScalar > 0.55 && (
-            <PurpleBlast isVisible={isShowingBlast} qualityLevel={visualQuality} />
-          )}
+          <DomainExpansion isActive={isDomainActive} qualityLevel={visualQuality} />
 
-          {/* Cinematic Header */}
-          <header className="relative z-30 w-full p-6 flex justify-between items-start pointer-events-none">
-        <motion.div 
-          initial={PARTIAL_SAFE_MODE ? undefined : { y: -20, opacity: 0 }}
-          animate={PARTIAL_SAFE_MODE ? { opacity: 1 } : { y: 0, opacity: 1 }}
-          className="flex items-center gap-4 pointer-events-auto"
-        >
-          <GojoLogo isProcessing={isProcessing} enableAnimation={featureFlags.enableOrbAnimation} />
-          <div className="flex flex-col">
-            <h1 className="font-orbitron text-2xl font-black tracking-tighter text-white">
-              COGNITIVE <span className="text-neon-cyan">OS</span>
-            </h1>
-            <div className="flex items-center gap-2 text-[10px] text-gray-400 font-mono tracking-widest uppercase">
-              <span className={`w-2 h-2 rounded-full ${isBackendOffline ? 'bg-red-500' : 'bg-neon-cyan'} ${PARTIAL_SAFE_MODE || isBackendOffline ? '' : 'animate-pulse'}`} />
-              Intelligence Core v2.0 | FPS: {fps} | {attentionLevel} | {isBackendOffline ? 'BACKEND OFFLINE' : `LOOPS: ${getActiveLoops().length}`}
+          {/* Ambient radial overlays */}
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,243,255,0.06),transparent_28%),radial-gradient(circle_at_bottom,rgba(168,85,247,0.06),transparent_30%)]" />
+
+          {/* ═══════════════════════════════════════════════════
+              MAIN LAYOUT — Centered, 3-column grid
+              ═══════════════════════════════════════════════════ */}
+          <div className="relative z-10 flex flex-1 flex-col px-4 py-4 md:px-6 md:py-5 overflow-hidden">
+            <div className="mx-auto flex h-full w-full max-w-[1100px] min-h-0 flex-col gap-4">
+
+              {/* ──────────── HEADER ──────────── */}
+              <header className="glass-panel flex flex-wrap items-center gap-4 px-5 py-3.5 md:flex-nowrap md:gap-6">
+                {/* Logo + Title */}
+                <div className="flex min-w-0 items-center gap-3.5">
+                  <GojoLogo
+                    isProcessing={isProcessing}
+                    enableAnimation={featureFlags.enableOrbAnimation}
+                    isExpanded
+                    onActivate={() => setAssistantMode('active')}
+                  />
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <h1 className="font-orbitron text-xl font-black tracking-[0.14em] text-white">
+                        COGNITIVE <span className="text-cyan-300">OS</span>
+                      </h1>
+                      <span className="font-rajdhani rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.24em] text-white/40">
+                        Jarvis Grid
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[9px] font-mono uppercase tracking-[0.24em] text-white/35">
+                      <span className={`h-1.5 w-1.5 rounded-full status-dot-online ${isBackendOffline ? 'bg-red-400 text-red-400' : 'bg-cyan-300 text-cyan-300'}`} />
+                      <span>{isBackendOffline ? 'Cloud AI' : 'Hybrid Core'}</span>
+                      <span className="text-white/20">│</span>
+                      <span>FPS {fps}</span>
+                      <span className="text-white/20">│</span>
+                      <span>{attentionLevel}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Spacer */}
+                <div className="hidden md:block md:flex-1" />
+
+                {/* Mode switcher */}
+                <div className="flex items-center gap-1 rounded-full border border-white/8 bg-white/[0.03] p-1">
+                  {['cinematic', 'focus', 'smart'].map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setUiMode(mode)}
+                      className={`rounded-full px-3 py-1.5 font-rajdhani text-[10px] font-semibold uppercase tracking-[0.2em] transition-all duration-200 ${
+                        uiMode === mode ? 'bg-white text-black shadow-[0_0_12px_rgba(255,255,255,0.15)]' : 'text-white/40 hover:text-white/70'
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Settings + Minimize */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="rounded-xl border border-white/8 bg-white/[0.04] p-2.5 text-white/50 transition hover:bg-white/8 hover:text-white"
+                    title="Neural Core Settings"
+                  >
+                    <SettingsIcon size={15} />
+                  </button>
+                  {isElectronOverlay && (
+                    <button
+                      type="button"
+                      onClick={() => setAssistantMode('idle')}
+                      className="rounded-xl border border-white/8 bg-white/[0.04] p-2.5 text-white/50 transition hover:bg-white/8 hover:text-white"
+                      title="Collapse to idle orb"
+                    >
+                      <Minimize2 size={15} />
+                    </button>
+                  )}
+                </div>
+              </header>
+
+              {/* ──────────── 3-COLUMN GRID ──────────── */}
+              <main className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1.2fr_1fr_0.78fr]">
+
+                {/* ═══ LEFT: Neural Feed ═══ */}
+                <section className="flex min-h-0 flex-col overflow-hidden glass-panel">
+                  <div className="flex items-center justify-between gap-3 border-b border-white/6 px-5 py-3.5">
+                    <div>
+                      <div className="mono-label">Neural Feed</div>
+                      <div className="mt-0.5 font-rajdhani text-[12px] font-medium text-white/60">Live interaction stream</div>
+                    </div>
+                    <div className="font-rajdhani text-[10px] font-medium text-white/25 tracking-wider">
+                      {responses.length} entries
+                    </div>
+                  </div>
+                  <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-4 py-3">
+                    <ResponsePanel responses={responses} />
+                    <AnimatePresence>
+                      {isProcessing && (
+                        <Motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                          className="mt-2 flex items-center gap-3 rounded-[18px] border border-purple-400/15 bg-purple-500/[0.04] px-4 py-2.5"
+                        >
+                          <Motion.div
+                            animate={{ scale: [1, 1.35, 1], opacity: [0.4, 0.9, 0.4] }}
+                            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                            className="h-2 w-2 rounded-full bg-purple-300"
+                          />
+                          <span className="mono-label text-purple-200/70" style={{ letterSpacing: '0.28em' }}>
+                            Synthesizing
+                          </span>
+                        </Motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </section>
+
+                {/* ═══ CENTER: Core State + Input ═══ */}
+                <section className="flex min-h-0 flex-col gap-4">
+                  {/* Core State Card */}
+                  <div className="glass-panel p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="mono-label">Core State</div>
+                        <div className={`mt-2 font-rajdhani text-2xl font-bold tracking-wide ${
+                          isVoiceListening ? 'text-red-300' : isProcessing ? 'text-purple-300' : 'text-white'
+                        }`}>
+                          {isVoiceListening ? 'Listening' : isProcessing ? 'Thinking' : 'Ready'}
+                        </div>
+                        <div className="mt-1.5 max-w-sm font-rajdhani text-[13px] font-medium leading-6 text-white/45">
+                          Command routing, speech, and desktop actions remain online.
+                        </div>
+                      </div>
+                      <div className="rounded-[18px] border border-white/8 bg-black/30 px-3.5 py-2.5 text-right">
+                        <div className="mono-label" style={{ fontSize: '9px' }}>Provider</div>
+                        <div className="mt-1.5 font-rajdhani text-[13px] font-semibold text-white">{providerInfo.name}</div>
+                      </div>
+                    </div>
+                    {/* Stats row */}
+                    <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
+                      <div className="rounded-[16px] border border-white/6 bg-white/[0.03] px-3.5 py-2.5">
+                        <div className="mono-label" style={{ fontSize: '9px' }}>Status</div>
+                        <div className="mt-1 font-rajdhani text-[13px] font-semibold text-white">{systemStatus.status}</div>
+                      </div>
+                      <div className="rounded-[16px] border border-white/6 bg-white/[0.03] px-3.5 py-2.5">
+                        <div className="mono-label" style={{ fontSize: '9px' }}>Intensity</div>
+                        <div className="mt-1 font-rajdhani text-[13px] font-semibold text-white">{Math.round(intensity * 100)}%</div>
+                      </div>
+                      <div className="rounded-[16px] border border-white/6 bg-white/[0.03] px-3.5 py-2.5">
+                        <div className="mono-label" style={{ fontSize: '9px' }}>Latency</div>
+                        <div className="mt-1 font-rajdhani text-[13px] font-semibold text-white">
+                          {lastActionTime ? `${lastActionTime}ms` : systemStatus.latency}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sticky Input Dock */}
+                  <div className="sticky-input-dock mt-auto flex flex-col gap-3 glass-panel p-4">
+                    {featureFlags.enableSuggestions && (
+                      <Suggestions onSelect={handleSendCommand} isSafeMode={PARTIAL_SAFE_MODE} />
+                    )}
+                    {/* JARVIS divider */}
+                    <div className="jarvis-divider" />
+                    <InputBox
+                      value={draft}
+                      onInputChange={setDraft}
+                      onSend={handleSendCommand}
+                      isProcessing={isProcessing}
+                      onSearchInteraction={(searching) => setIsSearching(searching)}
+                      startListeningSignal={wakeStartSignal}
+                      onVoiceStateChange={(listening) => {
+                        setIsVoiceListening(listening);
+                        if (listening) {
+                          setAssistantMode('active');
+                          setAnimationState('PROCESSING');
+                        } else if (!isProcessing && !isDomainActive) {
+                          setAnimationState('IDLE');
+                        }
+                      }}
+                    />
+                  </div>
+                </section>
+
+                {/* ═══ RIGHT: Quick Actions + Neural Mesh ═══ */}
+                <section className="flex min-h-0 flex-col gap-4 overflow-y-auto no-scrollbar">
+                  {/* Quick Actions */}
+                  <div className="glass-panel p-4">
+                    <div className="mb-3 mono-label">Quick Actions</div>
+                    <div className="grid gap-2.5">
+                      {ACTION_SHORTCUTS.map((shortcut) => {
+                        const Icon = shortcut.icon;
+                        return (
+                          <button
+                            key={shortcut.id}
+                            type="button"
+                            onClick={() => handleShortcut(shortcut)}
+                            className={`group rounded-[18px] border px-3.5 py-3 text-left transition-all duration-200 border-white/8 bg-white/[0.03] hover:border-cyan-300/20 hover:bg-cyan-400/[0.04]`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors border-white/8 bg-white/[0.04] text-cyan-300/70 group-hover:bg-cyan-400/8 group-hover:text-cyan-300`}>
+                                <Icon size={15} />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-rajdhani text-[13px] font-semibold text-white/85">{shortcut.title}</div>
+                                <div className="font-rajdhani text-[10px] font-medium text-white/30">
+                                  {shortcut.subtitle}
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Neural Mesh Stats */}
+                  <div className="glass-panel p-4">
+                    <div className="mono-label">Neural Mesh</div>
+                    <div className="mt-3 space-y-2.5">
+                      <div className="rounded-[16px] border border-white/6 bg-white/[0.03] px-3.5 py-2.5">
+                        <div className="mono-label" style={{ fontSize: '9px' }}>Provider Keys</div>
+                        <div className="mt-1 font-rajdhani text-[13px] font-semibold text-white">{providerInfo.available.length} connected</div>
+                      </div>
+                      <div className="rounded-[16px] border border-white/6 bg-white/[0.03] px-3.5 py-2.5">
+                        <div className="mono-label" style={{ fontSize: '9px' }}>Loop Budget</div>
+                        <div className="mt-1 font-rajdhani text-[13px] font-semibold text-white">{getActiveLoops().length}/1 active</div>
+                      </div>
+                      <div className="rounded-[16px] border border-white/6 bg-white/[0.03] px-3.5 py-2.5">
+                        <div className="mono-label" style={{ fontSize: '9px' }}>Voice Link</div>
+                        <div className={`mt-1 font-rajdhani text-[13px] font-semibold ${isVoiceListening ? 'text-red-300' : 'text-white'}`}>
+                          {isVoiceListening ? 'Active' : 'Standby'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </main>
             </div>
           </div>
-        </motion.div>
-
-        <motion.div 
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          className="flex items-center gap-4 pointer-events-auto bg-black/40 backdrop-blur-md p-2 rounded-xl border border-white/5"
-        >
-          <select 
-            value={uiMode} 
-            onChange={(e) => setUiMode(e.target.value)}
-            className="bg-transparent text-white text-[10px] font-mono uppercase tracking-widest outline-none cursor-pointer"
-          >
-            <option value="cinematic">Cinematic</option>
-            <option value="focus">Focus</option>
-            <option value="smart">Smart</option>
-          </select>
-        </motion.div>
-
-        <div className="p-4 glass-panel border border-white/5 flex gap-8 font-mono text-[10px] text-neon-cyan tracking-widest pointer-events-auto items-center">
-          <div className="flex gap-4 border-r border-white/10 pr-6 mr-2">
-            {['CINEMATIC', 'FOCUS', 'SMART'].map(m => (
-              <button 
-                key={m}
-                onClick={() => setUiMode(m.toLowerCase())}
-                className={`transition-all cursor-pointer ${uiMode === m.toLowerCase() ? 'text-white border-b border-purple-500' : 'text-gray-500 hover:text-gray-300'}`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-6">
-            <div>HZ: <span className={fps < 60 ? 'text-red-500 font-bold' : 'text-white'}>{fps}</span></div>
-            <div className="hidden md:block">INTENSITY: <span className="text-white">{Math.round(intensity * 100)}%</span></div>
-            <div>STATUS: <span className={isBackendOffline ? 'text-red-500 font-bold' : 'text-white'}>{isBackendOffline ? 'BACKEND OFFLINE' : (isVoiceListening ? 'LISTENING' : systemStatus.status)}</span></div>
-          </div>
-        </div>
-          {isElectronOverlay && (
-            <button
-              type="button"
-              onClick={() => setAssistantMode('idle')}
-              className="pointer-events-auto ml-3 p-2 rounded-lg bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
-              aria-label="Collapse assistant"
-              title="Collapse to idle orb"
-            >
-              <Minimize2 size={14} />
-            </button>
-          )}
-          </header>
-
-          {/* Interaction Feed */}
-          <main 
-            ref={scrollRef}
-            className="relative z-20 flex-1 w-full max-w-4xl mx-auto px-6 overflow-y-auto no-scrollbar pt-10 pb-40"
-          >
-            <ResponsePanel responses={responses} />
-            
-            <AnimatePresence>
-              {isProcessing && !isMerging && (
-                <motion.div 
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, scale: 1.5 }}
-                  className="mt-4 p-4 glass-panel border-l-2 border-purple-500 flex items-center gap-3"
-                >
-                  <div className="w-1 h-1 bg-purple-500 rounded-full animate-ping" />
-                  <span className="text-[10px] font-mono text-purple-400 uppercase tracking-[0.3em] font-black">
-                     ACCELERATING NEURAL CORE...
-                  </span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </main>
-
-          {/* Jarvis Command Console (Fixed) */}
-          <footer className={`fixed bottom-0 left-0 w-full z-40 p-8 pt-20 bg-gradient-to-t from-black via-black/90 to-transparent pointer-events-none transition-opacity duration-300 ${isMerging ? 'opacity-0' : 'opacity-100'}`}>
-            <div className="max-w-3xl mx-auto relative pointer-events-auto">
-              <InputBox 
-                onSend={handleSendCommand} 
-                isProcessing={isProcessing} 
-                onSearchInteraction={(searching) => setIsSearching(searching)}
-                startListeningSignal={wakeStartSignal}
-                onVoiceStateChange={(listening) => {
-                  setIsVoiceListening(listening);
-                  if (listening) {
-                    setAssistantMode('active');
-                    setAnimationState('PROCESSING');
-                  } else if (!isProcessing && !isMerging && !isShowingBlast) {
-                    setAnimationState('IDLE');
-                  }
-                }}
-              />
-              <div className="absolute -top-32 right-0 w-full flex justify-end">
-                {featureFlags.enableSuggestions && <Suggestions onSelect={handleSendCommand} isSafeMode={PARTIAL_SAFE_MODE} />}
-              </div>
-            </div>
-          </footer>
-
-          {/* Background Lighting */}
-          <div className="fixed top-0 right-0 w-[500px] h-[500px] bg-neon-cyan/5 blur-[150px] -z-10" />
-          <div className="fixed bottom-10 left-10 w-[400px] h-[400px] bg-neon-purple/5 blur-[150px] -z-10" />
         </>
       )}
-      {isElectronOverlay && assistantMode !== 'idle' && (
+
+      {isElectronOverlay && (
         <button
           type="button"
           onClick={() => window.electronAssistant.toggle()}
-          className="absolute top-3 right-3 z-50 w-2.5 h-2.5 rounded-full bg-red-400/70 hover:bg-red-300 transition-colors"
+          className={`absolute top-3 right-3 z-50 h-3 w-3 rounded-full transition-colors ${
+            assistantMode === 'idle' ? 'bg-white/30 hover:bg-white/50' : 'bg-red-400/70 hover:bg-red-300'
+          }`}
           aria-label="Hide assistant"
           title="Hide assistant"
         />
       )}
-      {isElectronOverlay && assistantMode === 'idle' && (
-        <button
-          type="button"
-          onClick={() => window.electronAssistant.toggle()}
-          className="absolute top-3 right-3 z-50 w-2.5 h-2.5 rounded-full bg-white/30 hover:bg-white/50 transition-colors"
-          aria-label="Hide assistant"
-          title="Hide assistant"
-        />
-      )}
+
       {isDev && <StabilityDashboard />}
-    </motion.div>
+      <AnimatePresence>
+        {isSettingsOpen && (
+          <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+        )}
+      </AnimatePresence>
+    </Motion.div>
   );
 }
 
@@ -601,10 +798,9 @@ export default function App() {
   }, []);
 
   if (HARD_SAFE_MODE) {
-    console.log('[CognitiveOS] HARD_SAFE_MODE active');
     return (
-      <div className="w-screen h-screen bg-black text-white flex items-center justify-center">
-        <div className="px-6 py-5 rounded-xl border border-white/10 bg-white/5 font-mono text-sm tracking-widest">
+      <div className="flex h-screen w-screen items-center justify-center bg-black text-white">
+        <div className="rounded-xl border border-white/10 bg-white/5 px-6 py-5 font-mono text-sm tracking-widest">
           HARD SAFE MODE ACTIVE
         </div>
       </div>
