@@ -5,6 +5,7 @@ const fs = require("fs");
 const os = require("os");
 const log = require("electron-log/main");
 const { autoUpdater } = require("electron-updater");
+const loudness = require("loudness");
 
 // HARD SAFE MODE: reduce GPU/system risk while debugging crashes.
 app.disableHardwareAcceleration();
@@ -344,9 +345,23 @@ ipcMain.handle("assistant:launch-app", (_event, appName) => {
     return { ok: false, error: "Invalid app name" };
   }
 
+  // Security: Restricted whitelist of allowed apps
+  const whitelist = {
+    vscode: "code",
+    chrome: "start chrome",
+    explorer: "explorer",
+    notepad: "notepad",
+    calculator: "calc",
+  };
+
+  const command = whitelist[appName.toLowerCase()];
+  if (!command) {
+    return { ok: false, error: "App not in security whitelist." };
+  }
+
   return new Promise((resolve) => {
     try {
-      const child = spawn("powershell.exe", ["-NoProfile", "-Command", `Start-Process "${appName}"`], {
+      const child = spawn("powershell.exe", ["-NoProfile", "-Command", `Start-Process "${command}"`], {
         windowsHide: true,
         detached: true,
         stdio: "ignore",
@@ -357,6 +372,25 @@ ipcMain.handle("assistant:launch-app", (_event, appName) => {
       resolve({ ok: false, error: error.message });
     }
   });
+});
+
+ipcMain.handle("assistant:set-volume", async (_event, level) => {
+  try {
+    const vol = Math.min(Math.max(parseInt(level, 10), 0), 100);
+    await loudness.setVolume(vol);
+    return { ok: true, volume: vol };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("assistant:get-volume", async () => {
+  try {
+    const vol = await loudness.getVolume();
+    return { ok: true, volume: vol };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
 });
 
 ipcMain.handle("assistant:get-system-info", () => ({

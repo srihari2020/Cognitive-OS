@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld("electronAssistant", {
   openExternal: (url) => ipcRenderer.invoke("assistant:open-external", url),
   openPath: (target) => ipcRenderer.invoke("assistant:open-path", target),
   launchApp: (appName) => ipcRenderer.invoke("assistant:launch-app", appName),
+  setVolume: (level) => ipcRenderer.invoke("assistant:set-volume", level),
+  getVolume: () => ipcRenderer.invoke("assistant:get-volume"),
   getSystemInfo: () => ipcRenderer.invoke("assistant:get-system-info"),
   onVisibilityChange: (callback) => {
     if (typeof callback !== "function") return () => {};

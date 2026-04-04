@@ -6,6 +6,7 @@ const UIContext = createContext();
 
 export const UIProvider = ({ children }) => {
   const [uiMode, setUiMode] = useState('smart'); // 'cinematic', 'focus', 'smart'
+  const [behaviorMode, setBehaviorMode] = useState('active'); // 'idle', 'active', 'processing'
   const [intensity, setIntensity] = useState(1);
   const [fps, setFps] = useState(120);
   const [isUserActive, setIsUserActive] = useState(false);

@@ -4,106 +4,133 @@ import { Sparkles, Zap, Globe, Settings, Cpu } from 'lucide-react';
 import { commandService } from '../services/api';
 import { useUI } from '../context/UIContext';
 import { registerLoop, unregisterLoop } from '../utils/runtimeMetrics';
+import { predictor } from '../services/predictor';
 
 const ICON_MAP = {
   OPEN_CODE: Cpu,
   OPEN_YOUTUBE: Zap,
   GOOGLE_SEARCH: Globe,
   TYPE_TEXT: Sparkles,
-  DEFAULT: Settings
+  DEFAULT: Settings,
+  Cpu: Cpu,
+  Zap: Zap,
+  Globe: Globe,
+  Settings: Settings,
+  Sparkles: Sparkles
 };
 
 const DEFAULT_SUGGESTIONS = [
-  { text: "Initialize System Scan", intent: "SCAN", icon: "Sparkles" },
-  { text: "Check Neural Hub", intent: "STATUS", icon: "Cpu" },
-  { text: "Sync Core", intent: "SYNC", icon: "Zap" }
+  { text: "Initialize System Scan", intent: "SCAN", icon: "Sparkles", isProactive: false },
+  { text: "Check Neural Hub", intent: "STATUS", icon: "Cpu", isProactive: false },
+  { text: "Sync Core", intent: "SYNC", icon: "Zap", isProactive: false }
 ];
 
 const Suggestions = memo(({ onSelect, isSafeMode }) => {
-  const { anticipation, intensity, backendStatus } = useUI();
+  const { anticipation, intensity, behaviorMode } = useUI();
   const [suggestions, setSuggestions] = useState([]);
-  const intervalRef = useRef(null);
+  const timeoutRef = useRef(null);
 
   useEffect(() => {
-    if (backendStatus === 'OFFLINE') {
-      setSuggestions(DEFAULT_SUGGESTIONS);
-      return;
-    }
-
     let running = true;
 
     const tick = async () => {
-      if (!running || backendStatus === 'OFFLINE' || commandService.isOffline()) return;
+      if (!running) return;
+      
+      // Behavior Mode check: active -> no interruption
+      if (behaviorMode === 'active') {
+        setSuggestions([]);
+        timeoutRef.current = setTimeout(tick, 5000);
+        return;
+      }
+
+      // processing -> locked
+      if (behaviorMode === 'processing') {
+        timeoutRef.current = setTimeout(tick, 5000);
+        return;
+      }
+
       try {
-        const data = await commandService.getSuggestions();
-        if (!running) return;
-        const list = (data.suggestions && data.suggestions.length > 0)
-          ? data.suggestions.map(s => ({ ...s, icon: ICON_MAP[s.intent] ? s.intent : 'DEFAULT' }))
-          : DEFAULT_SUGGESTIONS;
+        const predictions = await predictor.getPredictions();
+        const list = predictions.length > 0 ? predictions : DEFAULT_SUGGESTIONS;
         setSuggestions(list);
       } catch (error) {
-        if (error.name !== 'AbortError') {
-          setSuggestions(DEFAULT_SUGGESTIONS);
-        }
+        setSuggestions(DEFAULT_SUGGESTIONS);
       }
+
+      // Update every 5-10s as requested
+      const nextDelay = 5000 + Math.random() * 5000;
+      timeoutRef.current = setTimeout(tick, nextDelay);
     };
 
-    const cleanup = () => {
+    tick();
+
+    return () => {
       running = false;
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
       }
-      if (!isSafeMode) unregisterLoop('suggestionsPoll');
     };
-
-    if (isSafeMode) {
-      tick();
-      intervalRef.current = setInterval(tick, 4000);
-    } else if (registerLoop('suggestionsPoll', cleanup)) {
-      tick();
-      intervalRef.current = setInterval(tick, 4000);
-    }
-
-    return cleanup;
-  }, [isSafeMode, backendStatus]);
+  }, [behaviorMode, isSafeMode]);
 
   useEffect(() => {
+    // Override local predictions if the remote AI pushes active anticipations
     if (anticipation && anticipation.suggestions && anticipation.suggestions.length > 0) {
-      const list = anticipation.suggestions.map(s => ({ ...s, icon: ICON_MAP[s.intent] ? s.intent : 'DEFAULT' }));
+      const list = anticipation.suggestions.map(s => ({ ...s, icon: s.intent }));
       setSuggestions(list);
     }
   }, [anticipation]);
 
-  if (!suggestions.length) return null;
+  if (!suggestions.length || behaviorMode === 'active') return null;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {suggestions.map((item, index) => {
-        const Icon = ICON_MAP[item.icon] || ICON_MAP[item.intent] || Cpu;
-        const isAnticipated = anticipation && index === 0 && intensity > 0.5 && !isSafeMode;
+      <AnimatePresence mode="popLayout">
+        {suggestions.map((item, index) => {
+          const Icon = ICON_MAP[item.icon] || ICON_MAP[item.intent] || Cpu;
+          const isAnticipated = item.isProactive || (anticipation && index === 0 && intensity > 0.5 && !isSafeMode);
 
-        return (
-          <motion.button
-            key={`${item.intent}-${index}`}
-            type="button"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.05, duration: 0.2 }}
-            whileHover={{ scale: 1.04, y: -1 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => onSelect(item.text)}
-            className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-all duration-200 ${
-              isAnticipated
-                ? 'border-cyan-300/40 bg-cyan-400/10 text-cyan-200 shadow-[0_0_16px_rgba(0,243,255,0.15)]'
-                : 'border-white/8 bg-white/[0.04] text-white/55 hover:border-cyan-300/20 hover:bg-cyan-400/[0.06] hover:text-white/80'
-            }`}
-          >
-            <Icon size={12} className={isAnticipated ? 'text-cyan-300' : 'text-white/40'} />
-            <span className="whitespace-nowrap">{item.text}</span>
-          </motion.button>
-        );
-      })}
+          const actionString = item.executeRaw || item.action || item.text;
+
+          return (
+            <motion.button
+              key={`${item.intent}-${index}-${item.text}`}
+              type="button"
+              initial={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
+              animate={{ 
+                opacity: 1, 
+                scale: 1, 
+                filter: 'blur(0px)',
+                transition: { delay: index * 0.1 } 
+              }}
+              exit={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
+              whileHover={{ 
+                scale: 1.05, 
+                y: -2,
+                boxShadow: isAnticipated ? '0 0 20px rgba(34,211,238,0.4)' : '0 0 15px rgba(255,255,255,0.1)'
+              }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => onSelect(actionString)}
+              className={`flex items-center gap-2 rounded-full border px-4 py-2 text-[12px] font-medium transition-all duration-500 ${
+                isAnticipated
+                  ? 'border-cyan-300/50 bg-cyan-400/10 text-cyan-50 shadow-[0_0_20px_rgba(34,211,238,0.2)] animate-pulse'
+                  : 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white/90'
+              }`}
+            >
+              <Icon size={14} className={isAnticipated ? 'text-cyan-300' : 'text-white/50'} />
+              <span className="whitespace-nowrap">{item.text}</span>
+              {isAnticipated && (
+                <motion.div
+                  layoutId="glow"
+                  className="absolute inset-0 rounded-full bg-cyan-400/5 blur-md"
+                  initial={false}
+                  animate={{ opacity: [0.3, 0.6, 0.3] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                />
+              )}
+            </motion.button>
+          );
+        })}
+      </AnimatePresence>
     </div>
   );
 });

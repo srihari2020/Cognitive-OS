@@ -26,5 +26,31 @@ class PredictionEngine:
 
         return predictions[:3] # Return top 3 predictions
 
+    def predict_next_from_history(self, frontend_history):
+        """More advanced prediction based on frontend action history."""
+        if not frontend_history:
+            return []
+
+        predictions = []
+        recent_actions = [a['raw'].lower() for a in frontend_history[:5]]
+        
+        # Simple rule-based prediction from frontend history
+        if any("code" in a for a in recent_actions):
+            predictions.append({"text": "Continue coding?", "intent": "OPEN_CODE", "icon": "Code"})
+        
+        if any("search" in a for a in recent_actions):
+            predictions.append({"text": "Refine search?", "intent": "GOOGLE_SEARCH", "icon": "Search"})
+
+        if any("youtube" in a for a in recent_actions):
+             predictions.append({"text": "More videos?", "intent": "OPEN_YOUTUBE", "icon": "Zap"})
+
+        # Fallback to local memory if no frontend pattern found
+        if not predictions:
+            local_intents = self.predict_next({})
+            for intent in local_intents:
+                predictions.append({"text": f"Suggested: {intent.replace('_', ' ').capitalize()}", "intent": intent, "icon": "Sparkles"})
+
+        return predictions[:3]
+
 # Global instance
 prediction_engine = PredictionEngine()

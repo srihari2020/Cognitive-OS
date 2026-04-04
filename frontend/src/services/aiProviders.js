@@ -2,7 +2,7 @@
 const API_KEY_STORAGE_KEY = 'cognitive_os_api_keys';
 
 /**
- * AI Provider implementation for OpenAI (ChatGPT)
+ * AI Provider implementation for OpenAI (gpt-4o-mini)
  */
 class OpenAIProvider {
   constructor(apiKey) {
@@ -12,8 +12,7 @@ class OpenAIProvider {
   }
 
   async sendMessage(text, options = {}) {
-    const controller = options.signal ? null : new AbortController();
-    const signal = options.signal || controller.signal;
+    const signal = options.signal;
 
     try {
       const response = await fetch(this.baseUrl, {
@@ -23,16 +22,14 @@ class OpenAIProvider {
           'Authorization': `Bearer ${this.apiKey}`
         },
         body: JSON.stringify({
-          model: options.model || 'gpt-3.5-turbo',
-          messages: [{ role: 'user', content: text }],
-          temperature: 0.7
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: text }]
         }),
         signal
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || `OpenAI Error: ${response.status}`);
+        throw new Error(`OpenAI Error: ${response.status}`);
       }
 
       const data = await response.json();
@@ -44,7 +41,7 @@ class OpenAIProvider {
     } catch (error) {
       if (error.name === 'AbortError') throw error;
       return {
-        text: `Error from ${this.name}: ${error.message}`,
+        text: error.message,
         status: 'ERROR',
         provider: this.name
       };
@@ -53,18 +50,17 @@ class OpenAIProvider {
 }
 
 /**
- * AI Provider implementation for Google Gemini
+ * AI Provider implementation for Google Gemini (gemini-1.5-flash)
  */
 class GeminiProvider {
   constructor(apiKey) {
     this.apiKey = apiKey;
     this.name = 'Gemini';
-    this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+    this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
   }
 
   async sendMessage(text, options = {}) {
-    const controller = options.signal ? null : new AbortController();
-    const signal = options.signal || controller.signal;
+    const signal = options.signal;
 
     try {
       const response = await fetch(`${this.baseUrl}?key=${this.apiKey}`, {
@@ -79,8 +75,7 @@ class GeminiProvider {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || `Gemini Error: ${response.status}`);
+        throw new Error(`Gemini Error: ${response.status}`);
       }
 
       const data = await response.json();
@@ -92,7 +87,7 @@ class GeminiProvider {
     } catch (error) {
       if (error.name === 'AbortError') throw error;
       return {
-        text: `Error from ${this.name}: ${error.message}`,
+        text: error.message,
         status: 'ERROR',
         provider: this.name
       };
@@ -101,7 +96,7 @@ class GeminiProvider {
 }
 
 /**
- * AI Provider implementation for Anthropic (Claude)
+ * AI Provider implementation for Anthropic (claude-3-haiku-20240307)
  */
 class ClaudeProvider {
   constructor(apiKey) {
@@ -111,33 +106,27 @@ class ClaudeProvider {
   }
 
   async sendMessage(text, options = {}) {
-    const controller = options.signal ? null : new AbortController();
-    const signal = options.signal || controller.signal;
+    const signal = options.signal;
 
     try {
-      // NOTE: Claude requires specific headers for CORS if called from browser, 
-      // but in Electron renderer with contextIsolation it might need a proxy or 
-      // specialized handling if Anthropic blocks direct browser requests.
-      // We'll use a standard fetch first.
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': this.apiKey,
           'anthropic-version': '2023-06-01',
-          'dangerously-allow-browser': 'true' // Some SDKs require this
+          'dangerously-allow-browser': 'true'
         },
         body: JSON.stringify({
-          model: options.model || 'claude-3-haiku-20240307',
-          max_tokens: 1024,
+          model: 'claude-3-haiku-20240307',
+          max_tokens: 300,
           messages: [{ role: 'user', content: text }]
         }),
         signal
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || `Claude Error: ${response.status}`);
+        throw new Error(`Claude Error: ${response.status}`);
       }
 
       const data = await response.json();
@@ -149,7 +138,7 @@ class ClaudeProvider {
     } catch (error) {
       if (error.name === 'AbortError') throw error;
       return {
-        text: `Error from ${this.name}: ${error.message}`,
+        text: error.message,
         status: 'ERROR',
         provider: this.name
       };

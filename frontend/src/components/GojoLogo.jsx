@@ -1,9 +1,16 @@
 import React, { memo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const GojoLogo = memo(({ isProcessing = false, enableAnimation = false, isExpanded = true, onActivate }) => {
+const GojoLogo = memo(({ 
+  isProcessing = false, 
+  enableAnimation = false, 
+  isExpanded = true, 
+  onActivate,
+  isListening = false,
+  isSpeaking = false
+}) => {
   const [isHovered, setIsHovered] = useState(false);
-  const isCharged = enableAnimation && (isHovered || isProcessing);
+  const isCharged = enableAnimation && (isHovered || isProcessing || isListening || isSpeaking);
 
   return (
     <motion.button
@@ -14,13 +21,38 @@ const GojoLogo = memo(({ isProcessing = false, enableAnimation = false, isExpand
       whileTap={{ scale: 0.96 }}
       animate={isExpanded ? { scale: 1 } : { scale: 0.92 }}
       className={`relative flex h-[72px] w-[72px] items-center justify-center rounded-full border transition-all duration-500 ${
-        isProcessing
+        isProcessing || isListening
           ? 'border-purple-400/40 bg-black/70 thinking-glow'
-          : isHovered
-            ? 'border-cyan-300/40 bg-black/65 shadow-[0_0_32px_rgba(0,243,255,0.2)]'
-            : 'border-white/10 bg-black/55 shadow-[0_0_16px_rgba(0,243,255,0.08)]'
+          : isSpeaking
+            ? 'border-cyan-300/60 bg-cyan-400/10 shadow-[0_0_32px_rgba(34,211,238,0.3)]'
+            : isHovered
+              ? 'border-cyan-300/40 bg-black/65 shadow-[0_0_32px_rgba(0,243,255,0.2)]'
+              : 'border-white/10 bg-black/55 shadow-[0_0_16px_rgba(0,243,255,0.08)]'
       }`}
     >
+      {/* Listening Waveform Pulse */}
+      {isListening && (
+        <motion.div
+          animate={{
+            scale: [1, 1.4, 1],
+            opacity: [0.2, 0.4, 0.2],
+          }}
+          transition={{ duration: 1.2, repeat: Infinity }}
+          className="absolute inset-0 rounded-full bg-cyan-400/20"
+        />
+      )}
+      
+      {/* Speaking Waveform Pulse */}
+      {isSpeaking && (
+        <motion.div
+          animate={{
+            scale: [1, 1.2, 1.1, 1.3, 1],
+            opacity: [0.3, 0.6, 0.4, 0.7, 0.3],
+          }}
+          transition={{ duration: 0.8, repeat: Infinity }}
+          className="absolute inset-0 rounded-full bg-purple-400/20"
+        />
+      )}
       {/* Idle pulse ring */}
       <motion.div
         animate={{

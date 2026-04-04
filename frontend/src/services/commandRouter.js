@@ -32,7 +32,38 @@ export const commandRouter = {
         return { handled: true, message: 'Opening Chrome.' };
       }
 
-      // 3. Google Search
+      // 3. VS Code
+      if (/^(open|launch)\s+(vscode|code|vs code)\b/i.test(normalized)) {
+        const result = await bridge.launchApp('vscode');
+        if (!result?.ok) throw new Error(result?.error || 'Unable to launch VS Code.');
+        return { handled: true, message: 'Opening VS Code.' };
+      }
+
+      // 4. Volume Control
+      const volMatch = normalized.match(/^(?:set|change|volume)\s+(?:volume\s+to\s+)?(\d+)(?:%)?$/i) ||
+                       normalized.match(/^(?:volume)\s+(\d+)(?:%)?$/i);
+      if (volMatch) {
+        const level = parseInt(volMatch[1], 10);
+        const result = await bridge.setVolume(level);
+        if (!result?.ok) throw new Error(result?.error || 'Unable to set volume.');
+        return { handled: true, message: `Volume set to ${level} percent.` };
+      }
+
+      if (normalized.includes('volume up')) {
+        const current = await bridge.getVolume();
+        const next = Math.min((current?.volume || 0) + 10, 100);
+        await bridge.setVolume(next);
+        return { handled: true, message: `Volume increased to ${next} percent.` };
+      }
+
+      if (normalized.includes('volume down')) {
+        const current = await bridge.getVolume();
+        const next = Math.max((current?.volume || 0) - 10, 0);
+        await bridge.setVolume(next);
+        return { handled: true, message: `Volume decreased to ${next} percent.` };
+      }
+
+      // 5. Google Search
       const googleMatch = normalized.match(/^(?:search google(?: for)?|google|search(?: for)?)\s+(.+)$/i);
       if (googleMatch) {
         const query = encodeURIComponent(googleMatch[1].trim());
@@ -40,13 +71,18 @@ export const commandRouter = {
         return { handled: true, message: 'Searching now.' };
       }
 
-      // 4. File Explorer
+      // 6. File Explorer
       if (/^(open|show)\s+(files|explorer|documents)\b/i.test(normalized)) {
         await bridge.openPath('documents'); // default to user's Documents folder
         return { handled: true, message: 'Opening files.' };
       }
 
-      // 5. System Info
+      if (/^(open|show)\s+(downloads)\b/i.test(normalized)) {
+        await bridge.openPath('downloads');
+        return { handled: true, message: 'Opening downloads.' };
+      }
+
+      // 7. System Info
       if (/^(system info|show system info|system status|check system)\b/i.test(normalized)) {
         const info = await bridge.getSystemInfo();
         if (!info?.ok) throw new Error('Unable to fetch stats.');

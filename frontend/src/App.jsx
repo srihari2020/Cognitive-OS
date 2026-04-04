@@ -19,10 +19,13 @@ import DomainExpansion from './components/DomainExpansion';
 import StabilityDashboard from './components/StabilityDashboard';
 import SettingsPanel from './components/SettingsPanel';
 import { commandRouter } from './services/commandRouter';
+import { contextStore } from './services/contextStore';
 import { commandService } from './services/api';
 import { aiRouter } from './services/aiRouter';
 import { UIProvider, useUI } from './context/UIContext';
 import { getActiveLoops, stopAllLoops } from './utils/runtimeMetrics';
+
+import { voiceService } from './services/voiceService';
 
 const HARD_SAFE_MODE = false;
 const PARTIAL_SAFE_MODE = true;
@@ -73,6 +76,7 @@ function AppContent() {
   const [isMerging, setIsMerging] = useState(false);
   const [isDomainActive, setIsDomainActive] = useState(false);
   const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [isVoiceSpeaking, setIsVoiceSpeaking] = useState(false);
   const [wakeStartSignal, setWakeStartSignal] = useState(0);
   const [animationState, setAnimationState] = useState('IDLE');
   const [fpsDropCount, setFpsDropCount] = useState(0);
@@ -99,6 +103,8 @@ function AppContent() {
   const {
     uiMode,
     setUiMode,
+    behaviorMode,
+    setBehaviorMode,
     intensity,
     fps,
     attentionLevel,
@@ -110,6 +116,34 @@ function AppContent() {
     qualityScalar,
     backendStatus,
   } = useUI();
+
+  // Behavior Mode Controller
+  useEffect(() => {
+    if (isProcessing || isMerging || isDomainActive) {
+      setBehaviorMode('processing');
+      return;
+    }
+
+    const idleTime = contextStore.getIdleTimeMs();
+    if (idleTime > 15000) { // 15s idle for passive suggestions
+      setBehaviorMode('idle');
+    } else {
+      setBehaviorMode('active');
+    }
+
+    const interval = setInterval(() => {
+      const currentIdle = contextStore.getIdleTimeMs();
+      if (isProcessing || isMerging || isDomainActive) {
+        setBehaviorMode('processing');
+      } else if (currentIdle > 15000) {
+        setBehaviorMode('idle');
+      } else {
+        setBehaviorMode('active');
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [isProcessing, isMerging, isDomainActive, setBehaviorMode]);
   const isBackendOffline = backendStatus === 'OFFLINE';
   const providerInfo = aiRouter.getProviderInfo();
 
@@ -172,6 +206,36 @@ function AppContent() {
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
+  }, []);
+
+  useEffect(() => {
+    // Initialize Voice Service
+    voiceService.onTranscript = (transcript) => {
+      if (transcript.length > 0) {
+        setDraft(transcript);
+      }
+    };
+
+    voiceService.onCommand = (command) => {
+      if (command && command.trim().length > 1) {
+        handleSendCommand(command);
+      }
+    };
+
+    voiceService.onStateChange = ({ isListening, isSpeaking }) => {
+      setIsVoiceListening(isListening);
+      setIsVoiceSpeaking(isSpeaking);
+      if (isListening) setAnimationState('PROCESSING');
+      else if (!isSpeaking && !isProcessing) setAnimationState('IDLE');
+    };
+
+    // Auto-start listening for wake word
+    voiceService.start(true);
+
+    return () => {
+      voiceService.stop();
+      voiceService.cancel();
+    };
   }, []);
 
   useEffect(() => {
@@ -321,6 +385,7 @@ function AppContent() {
     const unsubscribeVisibility = window.electronAssistant.onVisibilityChange((payload) => {
       if (payload?.visible) {
         setAssistantMode('active');
+        contextStore.setActiveApp('Cognitive OS'); // Default when app is visible
       }
     });
 
@@ -372,20 +437,14 @@ function AppContent() {
   };
 
   const speakResponse = (text) => {
-    if (!window.speechSynthesis || !text) return;
+    if (!text) return;
     const safeText = text.replace(/^\[[^\]]+\]:\s*/i, '').trim();
     if (!safeText) return;
-    // Confident JARVIS tone — first sentence only, short and punchy
-    const conciseText = safeText.split(/(?<=[.!?])\s+/)[0].slice(0, 140);
-    window.speechSynthesis.cancel();
-    // Brief delay to sync with blast animation
-    setTimeout(() => {
-      const utterance = new SpeechSynthesisUtterance(conciseText);
-      utterance.rate = 1.1;
-      utterance.pitch = 0.85;
-      utterance.volume = 0.88;
-      window.speechSynthesis.speak(utterance);
-    }, 200);
+    
+    // JARVIS voice configuration
+    voiceService.speak(safeText, () => {
+      if (!isProcessing) setAnimationState('IDLE');
+    });
   };
 
 
@@ -400,10 +459,11 @@ function AppContent() {
           role: 'assistant',
         };
       } catch {
-        return null;
+        // Fallback to direct AI if backend fails
       }
     }
 
+    // Direct AI routing with fallback
     const aiResponse = await aiRouter.route(prompt);
     return {
       text: aiResponse.text,
@@ -416,6 +476,9 @@ function AppContent() {
     const prompt = text.trim();
     if (!prompt || isProcessing) return;
 
+    // Interrupt any current speaking when a new command is issued
+    voiceService.cancel();
+
     clearLifecycleTimeouts();
     if (isElectronOverlay) setAssistantMode('active');
     setDraft('');
@@ -425,8 +488,10 @@ function AppContent() {
     startPerformanceSample(2200);
     syncAnticipationNow();
     pushResponse(createEntry(prompt, 'user'));
+    contextStore.recordAction('command', prompt);
 
     try {
+      // 1. Local Command Routing (Regex/Hardcoded)
       const localRoute = await commandRouter.route(prompt);
       if (localRoute.handled) {
         await triggerDomainExpansion();
@@ -436,6 +501,37 @@ function AppContent() {
         return;
       }
 
+      // 2. AI-Assisted Intent Routing (Step 8)
+      // We ask the AI to determine if this is a system action
+      setSystemStatus((current) => ({ ...current, status: 'THINKING...' }));
+      const aiResponse = await resolveAssistantResponse(prompt + " (If this is a request to open an app like VS Code, Chrome, or change volume, respond ONLY with a JSON object like: {\"action\": \"open\", \"target\": \"vscode\"} or {\"action\": \"volume\", \"value\": 50}. Otherwise, respond naturally.)");
+
+      try {
+        const intent = JSON.parse(aiResponse.text);
+        if (intent.action === 'open' && intent.target) {
+          const result = await commandRouter.route(`open ${intent.target}`);
+          if (result.handled) {
+            await triggerDomainExpansion();
+            pushResponse(createEntry(`[JARVIS]: ${result.message}`, 'action'));
+            speakResponse(result.message);
+            setSystemStatus((current) => ({ ...current, status: 'ACTION COMPLETE' }));
+            return;
+          }
+        } else if (intent.action === 'volume' && intent.value !== undefined) {
+          const result = await commandRouter.route(`volume ${intent.value}`);
+          if (result.handled) {
+            await triggerDomainExpansion();
+            pushResponse(createEntry(`[JARVIS]: ${result.message}`, 'action'));
+            speakResponse(result.message);
+            setSystemStatus((current) => ({ ...current, status: 'ACTION COMPLETE' }));
+            return;
+          }
+        }
+      } catch (e) {
+        // Not a JSON intent, proceed to normal AI response
+      }
+
+      // 3. Normal AI Response (Chat)
       const result = await resolveAssistantResponse(prompt);
       await triggerDomainExpansion();
       const prefix = result.provider && result.provider !== 'backend' ? `[${result.provider}]` : '[JARVIS]';
@@ -539,6 +635,8 @@ function AppContent() {
                 <div className="flex min-w-0 items-center gap-3.5">
                   <GojoLogo
                     isProcessing={isProcessing}
+                    isListening={isVoiceListening}
+                    isSpeaking={isVoiceSpeaking}
                     enableAnimation={featureFlags.enableOrbAnimation}
                     isExpanded
                     onActivate={() => setAssistantMode('active')}
@@ -686,7 +784,7 @@ function AppContent() {
                   {/* Sticky Input Dock */}
                   <div className="sticky-input-dock mt-auto flex flex-col gap-3 glass-panel p-4">
                     {featureFlags.enableSuggestions && (
-                      <Suggestions onSelect={handleSendCommand} isSafeMode={PARTIAL_SAFE_MODE} />
+                      <Suggestions onSelect={setDraft} isSafeMode={PARTIAL_SAFE_MODE} />
                     )}
                     {/* JARVIS divider */}
                     <div className="jarvis-divider" />

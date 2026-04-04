@@ -185,6 +185,22 @@ export const commandService = {
   },
 
   /**
+   * Gets AI-assisted predictions based on history.
+   */
+  async getAIPredictions(history) {
+    try {
+      const response = await safeFetch(`${API_BASE_URL}/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ history }),
+      });
+      return await response.json();
+    } catch (error) {
+      return { predictions: [] };
+    }
+  },
+
+  /**
    * Helper to check current offline state
    */
   isOffline() {

@@ -1,0 +1,153 @@
+/**
+ * voiceService.js
+ * 
+ * Handles Speech-to-Text (STT) via Web Speech API and 
+ * Text-to-Speech (TTS) via SpeechSynthesis.
+ */
+
+class VoiceService {
+  constructor() {
+    this.recognition = null;
+    this.isListening = false;
+    this.isSpeaking = false;
+    this.silenceTimer = null;
+    this.onTranscript = null;
+    this.onCommand = null;
+    this.onStateChange = null;
+    
+    this.initRecognition();
+  }
+
+  initRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn('Speech recognition not supported in this browser.');
+      return;
+    }
+
+    this.recognition = new SpeechRecognition();
+    this.recognition.continuous = true;
+    this.recognition.interimResults = true;
+    this.recognition.lang = 'en-US';
+
+    this.recognition.onstart = () => {
+      this.isListening = true;
+      this.notifyStateChange();
+    };
+
+    this.recognition.onend = () => {
+      this.isListening = false;
+      this.notifyStateChange();
+      // Auto-restart if we want persistent "Hey Jarvis"
+      if (this.persistent) this.start();
+    };
+
+    this.recognition.onresult = (event) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+
+      const transcript = (finalTranscript || interimTranscript).toLowerCase().trim();
+      
+      if (this.onTranscript) this.onTranscript(transcript);
+
+      // Wake word check: "hey jarvis"
+      if (transcript.includes('hey jarvis') || transcript.includes('hey jarvis')) {
+        // If we were just idling, trigger active listening
+        if (this.onCommand && finalTranscript) {
+          const command = finalTranscript.replace(/hey jarvis/gi, '').trim();
+          if (command) this.onCommand(command);
+        }
+      }
+
+      // Smart Auto Send: If final result, or silence > 1.5s
+      if (finalTranscript) {
+        this.resetSilenceTimer(finalTranscript);
+      } else if (interimTranscript) {
+        this.resetSilenceTimer(interimTranscript);
+      }
+    };
+
+    this.recognition.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
+      this.isListening = false;
+      this.notifyStateChange();
+    };
+  }
+
+  resetSilenceTimer(text) {
+    if (this.silenceTimer) clearTimeout(this.silenceTimer);
+    this.silenceTimer = setTimeout(() => {
+      if (text && text.length > 2 && this.onCommand) {
+        this.onCommand(text);
+      }
+    }, 1500); // 1.5s silence auto-submit
+  }
+
+  start(persistent = true) {
+    if (!this.recognition || this.isListening) return;
+    this.persistent = persistent;
+    try {
+      this.recognition.start();
+    } catch (e) {
+      console.error('Failed to start recognition:', e);
+    }
+  }
+
+  stop() {
+    if (!this.recognition || !this.isListening) return;
+    this.persistent = false;
+    this.recognition.stop();
+  }
+
+  speak(text, onEnd = null) {
+    if (!window.speechSynthesis) return;
+
+    // Interrupt current speech
+    this.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    utterance.onstart = () => {
+      this.isSpeaking = true;
+      this.notifyStateChange();
+    };
+
+    utterance.onend = () => {
+      this.isSpeaking = false;
+      this.notifyStateChange();
+      if (onEnd) onEnd();
+    };
+
+    speechSynthesis.speak(utterance);
+  }
+
+  cancel() {
+    if (window.speechSynthesis) {
+      speechSynthesis.cancel();
+      this.isSpeaking = false;
+      this.notifyStateChange();
+    }
+  }
+
+  notifyStateChange() {
+    if (this.onStateChange) {
+      this.onStateChange({
+        isListening: this.isListening,
+        isSpeaking: this.isSpeaking
+      });
+    }
+  }
+}
+
+export const voiceService = new VoiceService();

@@ -2,106 +2,90 @@
 import { providers, credentialManager } from './aiProviders';
 
 /**
- * Intelligent Router for Multi-AI Provider system.
- * Handles provider selection, request normalization, and optional failover.
+ * Intelligent Unified Router for Multi-AI Provider system.
+ * Handles auto-fallback, light caching, and timeout control.
  */
 class AIRouter {
   constructor() {
-    this.activeProvider = null;
-    this.lastAbortController = null;
     this.fallbackChain = ['OpenAI', 'Gemini', 'Claude'];
+    this.cache = new Map(); // Light cache for last 5 responses
+    this.lastAbortController = null;
   }
 
   /**
-   * Initializes the router with a selected provider.
-   */
-  async initialize(providerName) {
-    const keys = credentialManager.loadKeys();
-    const apiKey = keys[providerName];
-
-    if (!apiKey) {
-      throw new Error(`API Key for ${providerName} is missing.`);
-    }
-
-    const ProviderClass = providers[providerName];
-    if (!ProviderClass) {
-      throw new Error(`Provider ${providerName} is not supported.`);
-    }
-
-    this.activeProvider = new ProviderClass(apiKey);
-    localStorage.setItem('active_ai_provider', providerName);
-    return true;
-  }
-
-  /**
-   * Routes a request to the active provider with concurrency control.
+   * Routes a request to the first available provider in the chain.
    */
   async route(text, options = {}) {
+    // 0. Check Cache
+    if (this.cache.has(text)) {
+      return this.cache.get(text);
+    }
+
     // 1. Concurrency Control: Cancel previous request
     if (this.lastAbortController) {
       this.lastAbortController.abort();
     }
     this.lastAbortController = new AbortController();
 
-    // 2. Initialize if not already done
-    if (!this.activeProvider) {
-      const savedProvider = localStorage.getItem('active_ai_provider') || 'OpenAI';
+    const keys = credentialManager.loadKeys();
+    let lastError = null;
+
+    // 2. Iterate through fallback chain
+    for (const providerName of this.fallbackChain) {
+      const apiKey = keys[providerName];
+      if (!apiKey) continue; // Skip if key missing
+
+      const ProviderClass = providers[providerName];
+      const provider = new ProviderClass(apiKey);
+
       try {
-        await this.initialize(savedProvider);
-      } catch (e) {
-        // Failover if initial provider fails initialization (e.g., missing key)
-        const nextProvider = this.fallbackChain.find(p => p !== savedProvider);
-        if (nextProvider) {
-          console.warn(`[AIRouter] ${savedProvider} initialization failed. Falling back to ${nextProvider}.`);
-          await this.initialize(nextProvider);
+        // 5s timeout per provider
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), 5000)
+        );
+
+        const response = await Promise.race([
+          provider.sendMessage(text, { signal: this.lastAbortController.signal }),
+          timeoutPromise
+        ]);
+
+        if (response.status === 'SUCCESS') {
+          // Success! Update cache and return
+          const result = { ...response, provider: providerName };
+          this._updateCache(text, result);
+          return result;
         } else {
-          throw e;
+          lastError = response.text;
         }
+      } catch (error) {
+        if (error.name === 'AbortError') throw error;
+        lastError = error.message;
+        // No console spam, just continue to next provider
       }
     }
 
-    // 3. Execute request with failover
-    try {
-      const response = await this.activeProvider.sendMessage(text, {
-        ...options,
-        signal: this.lastAbortController.signal
-      });
+    return {
+      text: lastError || "All AI providers failed or no keys configured.",
+      status: 'ERROR',
+      provider: 'ROUTER'
+    };
+  }
 
-      // 4. Failover Logic (Optional)
-      if (response.status === 'ERROR' && options.failover !== false) {
-        console.warn(`[AIRouter] ${this.activeProvider.name} failed. Attempting failover.`);
-        
-        const nextProviderName = this.fallbackChain.find(p => p !== this.activeProvider.name);
-        if (nextProviderName) {
-          try {
-            await this.initialize(nextProviderName);
-            return await this.route(text, { ...options, failover: false });
-          } catch (failoverError) {
-            console.error(`[AIRouter] Failover to ${nextProviderName} failed.`, failoverError);
-          }
-        }
-      }
-
-      return response;
-    } catch (error) {
-      if (error.name === 'AbortError') throw error;
-      return {
-        text: `Routing failed: ${error.message}`,
-        status: 'ERROR',
-        provider: this.activeProvider?.name || 'ROUTER'
-      };
-    } finally {
-      this.lastAbortController = null;
+  _updateCache(key, value) {
+    if (this.cache.size >= 5) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
     }
+    this.cache.set(key, value);
   }
 
   /**
    * Returns current active provider info
    */
   getProviderInfo() {
+    const keys = credentialManager.loadKeys();
     return {
-      name: this.activeProvider?.name || 'NONE',
-      available: this.fallbackChain.filter(p => !!credentialManager.loadKeys()[p])
+      available: this.fallbackChain.filter(p => !!keys[p])
     };
   }
 }

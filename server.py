@@ -94,6 +94,21 @@ async def get_suggestions():
         logger.log_error(f"API Suggestion Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+class PredictRequest(BaseModel):
+    history: list
+
+@app.post("/api/predict")
+async def predict_intent(request: PredictRequest):
+    """AI-assisted prediction based on user action history."""
+    try:
+        # Pass history to prediction engine for more advanced analysis
+        predictions = prediction_engine.predict_next_from_history(request.history)
+        return {"predictions": predictions}
+    except Exception as e:
+        logger.log_error(f"API Predict Error: {str(e)}")
+        # Fallback to empty list if prediction fails
+        return {"predictions": []}
+
 @app.get("/api/status")
 async def get_status():
     return {"status": "ONLINE"}
