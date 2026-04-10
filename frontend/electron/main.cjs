@@ -148,9 +148,9 @@ function createMainWindow() {
   const iconPath = getIconPath();
   log.info("Creating main window (safe config)");
   mainWindow = new BrowserWindow({
-    width: MODE_SIZES.active.width,
-    height: MODE_SIZES.active.height,
-    minWidth: 800,
+    width: 1200,
+    height: 800,
+    minWidth: 900,
     minHeight: 600,
     center: true,
     transparent: false,

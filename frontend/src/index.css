@@ -1,253 +1,206 @@
 @import "tailwindcss";
 
 @theme {
-  --color-neon-cyan: #00f3ff;
-  --color-neon-purple: #a855f7;
-  --color-neon-pink: #ff00ff;
-  --color-neon-blue: #4d4dff;
-  --color-neon-emerald: #34d399;
+  --color-neon-cyan: #00eaff;
+  --color-neon-purple: #7b2cff;
+  --color-bg-dark: #0b0f1a;
+  --color-text-main: #e6f1ff;
 
-  --color-glass-bg: rgba(255, 255, 255, 0.03);
-  --color-glass-bg-hover: rgba(255, 255, 255, 0.06);
-  --color-glass-border: rgba(255, 255, 255, 0.08);
-  --color-glass-border-hover: rgba(255, 255, 255, 0.14);
+  --color-glass-bg: rgba(255, 255, 255, 0.05);
+  --color-glass-border: rgba(255, 255, 255, 0.1);
 
   --font-orbitron: "Orbitron", sans-serif;
   --font-inter: "Inter", sans-serif;
   --font-rajdhani: "Rajdhani", sans-serif;
-
-  /* 8px grid spacing system */
-  --space-1: 8px;
-  --space-2: 16px;
-  --space-3: 24px;
-  --space-4: 32px;
-  --space-5: 40px;
-  --space-6: 48px;
-  --space-8: 64px;
-  --space-10: 80px;
-  --space-12: 96px;
-  --space-16: 128px;
 }
 
-/* ═══════════════════════════════════════════════════
-   BASE LAYER
-   ═══════════════════════════════════════════════════ */
 @layer base {
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(0, 243, 255, 0.18) transparent;
+    scrollbar-color: rgba(0, 234, 255, 0.2) transparent;
+    box-sizing: border-box;
   }
 
   *::-webkit-scrollbar {
-    width: 5px;
+    width: 4px;
   }
   *::-webkit-scrollbar-track {
     background: transparent;
   }
   *::-webkit-scrollbar-thumb {
-    background: rgba(0, 243, 255, 0.18);
-    border-radius: 999px;
+    background: rgba(0, 234, 255, 0.2);
+    border-radius: 10px;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 243, 255, 0.32);
+    background: rgba(0, 234, 255, 0.4);
   }
 
   body {
-    @apply bg-black text-white antialiased;
+    @apply bg-[#0b0f1a] text-[#e6f1ff] antialiased;
     font-family: var(--font-inter);
-    overflow-x: hidden;
-    overflow-y: hidden;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    height: 100vh;
+    background: linear-gradient(180deg, #0b0f1a, #0e1424);
+    scroll-behavior: smooth;
   }
 
-  body.electron-overlay {
-    background: transparent;
+  body::before {
+    content: "";
+    position: fixed;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(0, 234, 255, 0.08), transparent 70%);
+    top: 15%;
+    left: 20%;
+    filter: blur(80px);
+    pointer-events: none;
+    z-index: 0;
   }
 
-  body.electron-overlay #root {
-    background: transparent;
+  body::after {
+    content: "";
+    position: fixed;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(123, 44, 255, 0.05), transparent 70%);
+    bottom: 10%;
+    right: 15%;
+    filter: blur(100px);
+    pointer-events: none;
+    z-index: 0;
   }
 
-  h1, h2, h3, .font-orbitron {
-    font-family: var(--font-orbitron);
-  }
-
-  .font-rajdhani {
-    font-family: var(--font-rajdhani);
+  #root {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
   }
 }
 
-/* ═══════════════════════════════════════════════════
-   COMPONENT LAYER
-   ═══════════════════════════════════════════════════ */
 @layer components {
-  /* Updated glass panel with refined glass aesthetic */
-  .glass-panel {
-    background: var(--color-glass-bg);
+  .logo-glow {
+    text-shadow: 0 0 15px rgba(0, 234, 255, 0.4);
+    animation: fade-in 0.8s ease-out;
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .status-dot-pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    animation: pulse-alive 1.5s infinite;
+  }
+
+  @keyframes pulse-alive {
+    0% { opacity: 0.3; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1.1); }
+    100% { opacity: 0.3; transform: scale(0.9); }
+  }
+
+  .glass-ui {
+    background: rgba(255, 255, 255, 0.04);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
-    border: 1px solid var(--color-glass-border);
-    border-radius: 28px;
-    box-shadow:
-      0 8px 32px rgba(0, 0, 0, 0.35),
-      inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  .glass-panel:hover {
-    border-color: var(--color-glass-border-hover);
+  .message-entry:hover {
+    transform: translateY(-2px);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
   }
 
-  /* Premium glass with neon glow */
-  .glass-panel-neon {
-    background: var(--color-glass-bg);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(0, 243, 255, 0.12);
-    border-radius: 28px;
-    box-shadow:
-      0 0 20px rgba(0, 243, 255, 0.06),
-      0 8px 32px rgba(0, 0, 0, 0.35),
-      inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  .loading-dots::after {
+    content: ".";
+    animation: dots-cycle 1.5s steps(3, end) infinite;
   }
 
-  .glass-panel-neon:hover {
-    border-color: rgba(0, 243, 255, 0.22);
-    box-shadow:
-      0 0 28px rgba(0, 243, 255, 0.1),
-      0 8px 32px rgba(0, 0, 0, 0.35),
-      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  @keyframes dots-cycle {
+    0% { content: "."; }
+    33% { content: ".."; }
+    66% { content: "..."; }
+    100% { content: "."; }
   }
 
-  .neon-glow {
-    box-shadow: 0 0 15px rgba(0, 243, 255, 0.3);
-    border-color: var(--color-neon-cyan);
+  .futuristic-button {
+    transition: all 0.2s ease;
   }
 
-  .text-neon {
-    text-shadow: 0 0 10px var(--color-neon-cyan);
+  .futuristic-button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 15px rgba(0, 234, 255, 0.3);
   }
 
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+  .input-focus-glow:focus-within {
+    border-color: rgba(0, 234, 255, 0.5) !important;
+    box-shadow: 0 0 12px rgba(0, 234, 255, 0.15) !important;
   }
 
-  /* Thinking state — ambient glow (no spinner) */
-  .thinking-glow {
-    animation: thinking-breathe 1.8s ease-in-out infinite;
-    box-shadow:
-      0 0 24px rgba(168, 85, 247, 0.18),
-      0 0 48px rgba(168, 85, 247, 0.08);
+  .svg-loader-circle {
+    stroke-dasharray: 1, 200;
+    stroke-dashoffset: 0;
+    animation: dash 1.5s ease-in-out infinite, color 6s ease-in-out infinite;
+    stroke-linecap: round;
   }
 
-  /* Sticky input dock */
-  .sticky-input-dock {
-    position: sticky;
-    bottom: 0;
-    z-index: 20;
+  @keyframes rotate {
+    100% { transform: rotate(360deg); }
   }
 
-  /* Feed fade mask — top gradient that prevents overlap with header */
-  .feed-fade-top {
-    mask-image: linear-gradient(to bottom, transparent 0%, black 24px);
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 24px);
+  @keyframes dash {
+    0% {
+      stroke-dasharray: 1, 200;
+      stroke-dashoffset: 0;
+    }
+    50% {
+      stroke-dasharray: 89, 200;
+      stroke-dashoffset: -35px;
+    }
+    100% {
+      stroke-dasharray: 89, 200;
+      stroke-dashoffset: -124px;
+    }
   }
 
-  /* Action card pulse on execute */
-  .action-pulse-cyan {
-    animation: action-glow-cyan 0.6s ease-out;
-  }
-  .action-pulse-emerald {
-    animation: action-glow-emerald 0.6s ease-out;
-  }
-  .action-pulse-red {
-    animation: action-glow-red 0.6s ease-out;
+  @keyframes color {
+    100%, 0% { stroke: var(--color-neon-cyan); }
+    40% { stroke: var(--color-neon-purple); }
+    66% { stroke: var(--color-neon-cyan); }
+    80% { stroke: var(--color-neon-purple); }
   }
 
-  /* Status dot animation */
-  .status-dot-online {
-    animation: status-pulse 2s ease-in-out infinite;
+  .glow-pulse {
+    animation: glow-pulse 2s ease-in-out infinite;
   }
 
-  /* JARVIS horizontal divider */
-  .jarvis-divider {
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      rgba(0, 243, 255, 0.25) 30%,
-      rgba(168, 85, 247, 0.2) 70%,
-      transparent 100%
-    );
+  @keyframes glow-pulse {
+    0%, 100% { opacity: 0.6; filter: drop-shadow(0 0 2px var(--color-neon-cyan)); }
+    50% { opacity: 1; filter: drop-shadow(0 0 8px var(--color-neon-cyan)); }
   }
 
-  /* Label badge */
-  .label-badge {
-    font-family: var(--font-rajdhani);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
+  .loader {
+    width: 30px;
+    height: 30px;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    border-top: 3px solid #00eaff;
+    border-radius: 50%;
+    animation: spin-loader 1s linear infinite;
   }
 
-  /* Mono label */
-  .mono-label {
-    font-family: "Inter", monospace;
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.32em;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.45);
+  @keyframes spin-loader {
+    to { transform: rotate(360deg); }
   }
 }
-
-/* ═══════════════════════════════════════════════════
-   KEYFRAME ANIMATIONS
-   ═══════════════════════════════════════════════════ */
-
-/* Idle particle float — CSS only, 0 JS loops */
-@keyframes particle-float {
-  0%, 100% {
-    transform: translate3d(var(--px), var(--py), 0) scale(1);
-    opacity: var(--po, 0.35);
-  }
-  25% {
-    transform: translate3d(
-      calc(var(--px) + var(--drift-x, 15px)),
-      calc(var(--py) - var(--drift-y, 20px)),
-      0
-    ) scale(1.08);
-    opacity: calc(var(--po, 0.35) + 0.12);
-  }
-  50% {
-    transform: translate3d(
-      calc(var(--px) + var(--drift-x2, -10px)),
-      calc(var(--py) + var(--drift-y2, 12px)),
-      0
-    ) scale(0.95);
-    opacity: var(--po, 0.35);
-  }
-  75% {
-    transform: translate3d(
-      calc(var(--px) - var(--drift-x, 15px)),
-      calc(var(--py) + var(--drift-y, 20px)),
-      0
-    ) scale(1.04);
-    opacity: calc(var(--po, 0.35) + 0.08);
-  }
-}
-
-/* Orb idle pulse */
-@keyframes pulse-idle {
-  0%, 100% { transform: scale(1); opacity: 0.65; }
-  50% { transform: scale(1.04); opacity: 0.85; }
-}
-
-/* Orb energy charge on hover */
 @keyframes energy-charge {
   0% { transform: scale(1); opacity: 0.7; }
   50% { transform: scale(1.12); opacity: 1; }

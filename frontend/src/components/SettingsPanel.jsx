@@ -1,6 +1,4 @@
-
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Settings, X, Save, Shield, Cpu, Key, Check, AlertCircle } from 'lucide-react';
 import { credentialManager, providers } from '../services/aiProviders';
 import { aiRouter } from '../services/aiRouter';
@@ -39,10 +37,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   return (
-    <motion.div 
-      initial={{ opacity: 0, scale: 0.95, y: 20 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95, y: 20 }}
+    <div 
       className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md"
     >
       <div className="w-full max-w-lg bg-[#0a0a0c] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
@@ -117,28 +112,16 @@ export default function SettingsPanel({ isOpen, onClose }) {
         {/* Footer */}
         <div className="p-4 bg-white/5 border-t border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <AnimatePresence mode="wait">
-              {saveStatus === 'success' && (
-                <motion.div 
-                  initial={{ opacity: 0, x: -10 }} 
-                  animate={{ opacity: 1, x: 0 }} 
-                  exit={{ opacity: 0 }}
-                  className="flex items-center gap-1.5 text-green-400 text-[11px] font-medium"
-                >
-                  <Check size={14} /> Neural core updated
-                </motion.div>
-              )}
-              {saveStatus === 'error' && (
-                <motion.div 
-                  initial={{ opacity: 0, x: -10 }} 
-                  animate={{ opacity: 1, x: 0 }} 
-                  exit={{ opacity: 0 }}
-                  className="flex items-center gap-1.5 text-red-400 text-[11px] font-medium"
-                >
-                  <AlertCircle size={14} /> Failed to save
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {saveStatus === 'success' && (
+              <div className="flex items-center gap-1.5 text-green-400 text-[11px] font-medium">
+                <Check size={14} /> Neural core updated
+              </div>
+            )}
+            {saveStatus === 'error' && (
+              <div className="flex items-center gap-1.5 text-red-400 text-[11px] font-medium">
+                <AlertCircle size={14} /> Failed to save
+              </div>
+            )}
           </div>
           <button
             onClick={handleSave}
@@ -157,6 +140,6 @@ export default function SettingsPanel({ isOpen, onClose }) {
           </button>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

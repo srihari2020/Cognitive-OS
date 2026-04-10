@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, memo } from 'react';
-import { motion } from 'framer-motion';
 import { Sparkles, Zap, Globe, Settings, Cpu } from 'lucide-react';
 import { commandService } from '../services/api';
 import { useUI } from '../context/UIContext';
@@ -58,7 +57,7 @@ const Suggestions = memo(({ onSelect, isSafeMode }) => {
       }
 
       // Update every 5-10s as requested
-      const nextDelay = 5000 + Math.random() * 5000;
+      const nextDelay = 8000 + Math.random() * 5000; // Increased interval for stability (8-13s)
       timeoutRef.current = setTimeout(tick, nextDelay);
     };
 
@@ -70,7 +69,7 @@ const Suggestions = memo(({ onSelect, isSafeMode }) => {
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [behaviorMode, isSafeMode]);
+  }, [isSafeMode]); // Removed behaviorMode dependency for fewer re-runs
 
   useEffect(() => {
     // Override local predictions if the remote AI pushes active anticipations
@@ -84,53 +83,28 @@ const Suggestions = memo(({ onSelect, isSafeMode }) => {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <AnimatePresence mode="popLayout">
-        {suggestions.map((item, index) => {
-          const Icon = ICON_MAP[item.icon] || ICON_MAP[item.intent] || Cpu;
-          const isAnticipated = item.isProactive || (anticipation && index === 0 && intensity > 0.5 && !isSafeMode);
+      {suggestions.map((item, index) => {
+        const Icon = ICON_MAP[item.icon] || ICON_MAP[item.intent] || Cpu;
+        const isAnticipated = item.isProactive || (anticipation && index === 0 && intensity > 0.5 && !isSafeMode);
 
-          const actionString = item.executeRaw || item.action || item.text;
+        const actionString = item.executeRaw || item.action || item.text;
 
-          return (
-            <motion.button
-              key={`${item.intent}-${index}-${item.text}`}
-              type="button"
-              initial={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
-              animate={{ 
-                opacity: 1, 
-                scale: 1, 
-                filter: 'blur(0px)',
-                transition: { delay: index * 0.1 } 
-              }}
-              exit={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
-              whileHover={{ 
-                scale: 1.05, 
-                y: -2,
-                boxShadow: isAnticipated ? '0 0 20px rgba(34,211,238,0.4)' : '0 0 15px rgba(255,255,255,0.1)'
-              }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => onSelect(actionString)}
-              className={`flex items-center gap-2 rounded-full border px-4 py-2 text-[12px] font-medium transition-all duration-500 ${
-                isAnticipated
-                  ? 'border-cyan-300/50 bg-cyan-400/10 text-cyan-50 shadow-[0_0_20px_rgba(34,211,238,0.2)] animate-pulse'
-                  : 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white/90'
-              }`}
-            >
-              <Icon size={14} className={isAnticipated ? 'text-cyan-300' : 'text-white/50'} />
-              <span className="whitespace-nowrap">{item.text}</span>
-              {isAnticipated && (
-                <motion.div
-                  layoutId="glow"
-                  className="absolute inset-0 rounded-full bg-cyan-400/5 blur-md"
-                  initial={false}
-                  animate={{ opacity: [0.3, 0.6, 0.3] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                />
-              )}
-            </motion.button>
-          );
-        })}
-      </AnimatePresence>
+        return (
+          <button
+            key={`${item.intent}-${index}-${item.text}`}
+            type="button"
+            onClick={() => onSelect(actionString)}
+            className={`flex items-center gap-2 rounded-full border px-4 py-2 text-[12px] font-medium transition-all duration-500 ${
+              isAnticipated
+                ? 'border-cyan-300/50 bg-cyan-400/10 text-cyan-50 shadow-[0_0_20px_rgba(34,211,238,0.2)] animate-pulse'
+                : 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white/90 hover:scale-105'
+            }`}
+          >
+            <Icon size={14} className={isAnticipated ? 'text-cyan-300' : 'text-white/50'} />
+            <span className="whitespace-nowrap">{item.text}</span>
+          </button>
+        );
+      })}
     </div>
   );
 });
