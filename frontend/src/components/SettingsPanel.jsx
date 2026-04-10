@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, X, Save, Shield, Cpu, Key, Check, AlertCircle } from 'lucide-react';
 import { credentialManager, providers } from '../services/aiProviders';
-import { aiRouter } from '../services/aiRouter';
 
 export default function SettingsPanel({ isOpen, onClose }) {
   const [keys, setKeys] = useState({ OpenAI: '', Gemini: '', Claude: '' });
@@ -23,11 +22,10 @@ export default function SettingsPanel({ isOpen, onClose }) {
     setSaveStatus(null);
     try {
       credentialManager.saveKeys(keys);
-      await aiRouter.initialize(activeProvider);
+      localStorage.setItem('active_ai_provider', activeProvider);
       setSaveStatus('success');
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (error) {
-      console.error('Failed to save settings:', error);
       setSaveStatus('error');
     } finally {
       setIsSaving(false);

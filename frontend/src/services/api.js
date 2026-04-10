@@ -150,7 +150,7 @@ export const commandService = {
    */
   async recordInteraction(eventType, x = 0, y = 0) {
     try {
-      await safeFetch(`${API_BASE_URL}/interaction`, {
+      await safeFetch(`${API_BASE_URL}/interaction-event`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event_type: eventType, x, y }),

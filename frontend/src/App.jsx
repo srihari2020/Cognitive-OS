@@ -1,18 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  Cpu,
-  FolderOpen,
-  Globe,
-  Minimize2,
-  Search,
-  Settings as SettingsIcon,
-  Sparkles,
-} from 'lucide-react';
 import GojoLogo from './components/GojoLogo';
 import InputBox from './components/InputBox';
 import ResponsePanel from './components/ResponsePanel';
 import Suggestions from './components/Suggestions';
-import StabilityDashboard from './components/StabilityDashboard';
 import SettingsPanel from './components/SettingsPanel';
 import { commandRouter } from './services/commandRouter';
 import { contextStore } from './services/contextStore';
@@ -20,8 +10,6 @@ import { commandService } from './services/api';
 import { aiRouter } from './services/aiRouter';
 import { workflowService } from './services/workflowService';
 import { UIProvider, useUI } from './context/UIContext';
-import { getActiveLoops, stopAllLoops } from './utils/runtimeMetrics';
-
 import { voiceService } from './services/voiceService';
 
 const HARD_SAFE_MODE = false;
@@ -34,13 +22,7 @@ const INITIAL_FEATURE_FLAGS = {
   enableCursor: false,     // Disabled custom cursor
 };
 
-const ACTION_SHORTCUTS = [
-  { id: 'chrome', title: 'Open Chrome', subtitle: 'Browser shell', icon: Globe, command: 'open chrome' },
-  { id: 'youtube', title: 'Open YouTube', subtitle: 'Media portal', icon: Sparkles, command: 'open youtube' },
-  { id: 'google', title: 'Search Google', subtitle: 'Query URL', icon: Search, command: 'search google for Cognitive OS' },
-  { id: 'files', title: 'Open Files', subtitle: 'Explorer', icon: FolderOpen, command: 'open files' },
-  { id: 'system', title: 'System Info', subtitle: 'OS stats', icon: Cpu, command: 'system info' },
-];
+// Removed unused ACTION_SHORTCUTS
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -54,7 +36,7 @@ const createEntry = (text, role = 'assistant', extra = {}) => ({
 function AppContent() {
   const [featureFlags, setFeatureFlags] = useState(INITIAL_FEATURE_FLAGS);
   const [responses, setResponses] = useState([
-    createEntry('System online. Awaiting command stream.', 'system'),
+    createEntry('Online and ready. How can I help?', 'system'),
   ]);
   const [draft, setDraft] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -76,6 +58,7 @@ function AppContent() {
   const scrollRef = useRef(null);
   const lifecycleTimeoutsRef = useRef([]);
   const orbButtonRef = useRef(null);
+  const lastOrbNearRef = useRef(false);
   const idleIntentRef = useRef({
     lastX: 0,
     lastY: 0,
@@ -86,12 +69,11 @@ function AppContent() {
   });
   
   const LOADING_MESSAGES = [
-    "Thinking...",
     "Working on it...",
-    "Give me a second...",
-    "Processing request...",
-    "Analyzing data...",
-    "Synthesizing response..."
+    "One moment...",
+    "Looking into that...",
+    "Almost there...",
+    "Processing...",
   ];
   const [currentLoadingMessage, setCurrentLoadingMessage] = useState(LOADING_MESSAGES[0]);
 
@@ -437,11 +419,11 @@ function AppContent() {
       const localRoute = await commandRouter.route(prompt);
       if (localRoute.handled) {
         if (localRoute.isWorkflow) {
-          pushResponse(createEntry(`[JARVIS]: ${localRoute.workflow.message}`, 'action'));
+          pushResponse(createEntry(`[FRIDAY]: ${localRoute.workflow.message}`, 'action'));
           speakResponse(localRoute.workflow.message);
           executeWorkflow(localRoute.workflow);
         } else {
-          pushResponse(createEntry(`[JARVIS]: ${localRoute.message}`, 'action'));
+          pushResponse(createEntry(`[FRIDAY]: ${localRoute.message}`, 'action'));
           speakResponse(localRoute.message);
         }
         setSystemStatus((current) => ({ ...current, status: 'ACTION COMPLETE' }));
@@ -452,7 +434,7 @@ function AppContent() {
       setSystemStatus((current) => ({ ...current, status: 'THINKING...' }));
       
       const result = await resolveAssistantResponse(prompt);
-      const prefix = result.provider && result.provider !== 'backend' ? `[${result.provider}]` : '[JARVIS]';
+      const prefix = result.provider && result.provider !== 'backend' ? `[${result.provider}]` : '[FRIDAY]';
       
       // Check for workflow in result
       if (result.workflow && result.workflow.steps?.length > 0) {
@@ -462,7 +444,7 @@ function AppContent() {
         const repeatCount = updatedHistory.filter(h => h.toLowerCase() === prompt.toLowerCase()).length;
         if (repeatCount >= 3) {
           const routineName = prompt.split(' ').slice(0, 2).join(' ') + ' routine';
-          pushResponse(createEntry(`[JARVIS]: I noticed you've requested this ${repeatCount} times. Would you like me to save this as a permanent routine called "${routineName}"?`, 'assistant'));
+          pushResponse(createEntry(`[FRIDAY]: I noticed you've requested this ${repeatCount} times. Would you like me to save this as a permanent routine called "${routineName}"?`, 'assistant'));
           speakResponse(`I've noticed you've requested this several times. Would you like me to save this as a permanent routine?`);
         }
 
@@ -511,12 +493,12 @@ function AppContent() {
         }
       );
       
-      pushResponse(createEntry(`[JARVIS]: Workflow completed.`, 'action'));
+      pushResponse(createEntry(`[FRIDAY]: Workflow completed.`, 'action'));
       speakResponse('Workflow complete.');
       setSystemStatus({ status: 'WORKFLOW FINISHED' });
     } catch (error) {
       setWorkflowStatus(prev => ({ ...prev, error: error.message }));
-      pushResponse(createEntry(`[JARVIS]: Workflow stopped: ${error.message}`, 'system'));
+      pushResponse(createEntry(`[FRIDAY]: Workflow stopped: ${error.message}`, 'system'));
       speakResponse(`I've encountered an issue: ${error.message}. Stopping the workflow.`);
       setSystemStatus({ status: 'WORKFLOW FAILED' });
     } finally {
@@ -527,16 +509,7 @@ function AppContent() {
       }, 3000);
     }
   };
-
-  const handleShortcut = (shortcut) => {
-    if (shortcut.id === 'google') {
-      const query = draft.trim() || 'Cognitive OS';
-      handleSendCommand(`search google for ${query}`);
-      return;
-    }
-    handleSendCommand(shortcut.command);
-  };
-
+// Removed unused handleShortcut
   const renderIdleOrb = () => (
     <button
       ref={orbButtonRef}
@@ -608,7 +581,9 @@ function AppContent() {
                 <div className="workflow-preview glass-ui rounded-2xl p-6 mb-4 border border-cyan-500/20 bg-cyan-500/5 animate-in fade-in slide-in-from-bottom-4 duration-300">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
-                      <Zap size={18} className="text-cyan-400 animate-pulse" />
+                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-cyan-400 animate-pulse">
+                         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                       </svg>
                       <h3 className="font-rajdhani text-sm font-bold uppercase tracking-widest text-cyan-100">
                         Autonomous Workflow
                       </h3>
@@ -693,7 +668,7 @@ function AppContent() {
                 <div className="relative">
                   <InputBox
                     value={draft}
-                    onInputChange={setDraft}
+                    onChange={setDraft}
                     onSend={handleSendCommand}
                     isProcessing={isProcessing}
                     isListening={isVoiceListening}
@@ -724,8 +699,8 @@ function AppContent() {
 
 export default function App() {
   useEffect(() => {
-    console.log('[CognitiveOS] App mount');
-    return () => console.log('[CognitiveOS] App unmount');
+    // App lifecycle — no console spam
+    return () => {};
   }, []);
 
   if (HARD_SAFE_MODE) {

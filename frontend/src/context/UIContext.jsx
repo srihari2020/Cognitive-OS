@@ -293,6 +293,8 @@ export const UIProvider = ({ children }) => {
   const value = {
     uiMode,
     setUiMode,
+    behaviorMode,
+    setBehaviorMode,
     intensity: uiMode === 'focus' ? 0.1 : intensity,
     fps,
     isUserActive,

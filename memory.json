@@ -312,5 +312,11 @@
         "command": "open vscode",
         "intent": "OPEN_CODE",
         "entities": {}
+    },
+    {
+        "timestamp": "2026-04-10T12:28:31.667391",
+        "command": "yoo",
+        "intent": "UNKNOWN",
+        "entities": {}
     }
 ]
