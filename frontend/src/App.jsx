@@ -18,6 +18,7 @@ import { commandRouter } from './services/commandRouter';
 import { contextStore } from './services/contextStore';
 import { commandService } from './services/api';
 import { aiRouter } from './services/aiRouter';
+import { workflowService } from './services/workflowService';
 import { UIProvider, useUI } from './context/UIContext';
 import { getActiveLoops, stopAllLoops } from './utils/runtimeMetrics';
 
@@ -68,6 +69,9 @@ function AppContent() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [systemStatus, setSystemStatus] = useState({ status: 'ACTIVE', latency: '1MS' });
   const [stabilityMode, setStabilityMode] = useState(false);
+  const [activeWorkflow, setActiveWorkflow] = useState(null);
+  const [workflowStatus, setWorkflowStatus] = useState({ currentStep: -1, completed: [], error: null });
+  const [commandHistory, setCommandHistory] = useState([]);
   const [idleIntentLevel, setIdleIntentLevel] = useState('low');
   const scrollRef = useRef(null);
   const lifecycleTimeoutsRef = useRef([]);
@@ -80,6 +84,28 @@ function AppContent() {
     smoothedScore: 0,
     level: 'low',
   });
+  
+  const LOADING_MESSAGES = [
+    "Thinking...",
+    "Working on it...",
+    "Give me a second...",
+    "Processing request...",
+    "Analyzing data...",
+    "Synthesizing response..."
+  ];
+  const [currentLoadingMessage, setCurrentLoadingMessage] = useState(LOADING_MESSAGES[0]);
+
+  useEffect(() => {
+    let interval;
+    if (isProcessing) {
+      interval = setInterval(() => {
+        setCurrentLoadingMessage(LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]);
+      }, 2000); // Change message every 2 seconds
+    } else {
+      setCurrentLoadingMessage(LOADING_MESSAGES[0]); // Reset to default
+    }
+    return () => clearInterval(interval);
+  }, [isProcessing]);
   
   const isElectronOverlay = Boolean(window.electronAssistant);
   const {
@@ -387,7 +413,7 @@ function AppContent() {
 
   const handleSendCommand = async (text) => {
     const prompt = text.trim();
-    if (!prompt || isProcessing) return;
+    if (!prompt || isProcessing || activeWorkflow) return;
 
     // Interrupt any current speaking when a new command is issued
     voiceService.cancel();
@@ -401,13 +427,23 @@ function AppContent() {
     // Minimal interaction logic
     pushResponse(createEntry(prompt, 'user'));
     contextStore.recordAction('command', prompt);
+    
+    // Auto-Learning: Track command history
+    const updatedHistory = [...commandHistory, prompt].slice(-10);
+    setCommandHistory(updatedHistory);
 
     try {
       // 1. Local Command Routing (Regex/Hardcoded)
       const localRoute = await commandRouter.route(prompt);
       if (localRoute.handled) {
-        pushResponse(createEntry(`[JARVIS]: ${localRoute.message}`, 'action'));
-        speakResponse(localRoute.message);
+        if (localRoute.isWorkflow) {
+          pushResponse(createEntry(`[JARVIS]: ${localRoute.workflow.message}`, 'action'));
+          speakResponse(localRoute.workflow.message);
+          executeWorkflow(localRoute.workflow);
+        } else {
+          pushResponse(createEntry(`[JARVIS]: ${localRoute.message}`, 'action'));
+          speakResponse(localRoute.message);
+        }
         setSystemStatus((current) => ({ ...current, status: 'ACTION COMPLETE' }));
         return;
       }
@@ -417,17 +453,78 @@ function AppContent() {
       
       const result = await resolveAssistantResponse(prompt);
       const prefix = result.provider && result.provider !== 'backend' ? `[${result.provider}]` : '[JARVIS]';
-      pushResponse(createEntry(`${prefix}: ${result.text}`, result.role));
-      speakResponse(result.text);
+      
+      // Check for workflow in result
+      if (result.workflow && result.workflow.steps?.length > 0) {
+        const workflow = result.workflow;
+        
+        // Auto-Learning Check: If this is a repeat command, suggest saving
+        const repeatCount = updatedHistory.filter(h => h.toLowerCase() === prompt.toLowerCase()).length;
+        if (repeatCount >= 3) {
+          const routineName = prompt.split(' ').slice(0, 2).join(' ') + ' routine';
+          pushResponse(createEntry(`[JARVIS]: I noticed you've requested this ${repeatCount} times. Would you like me to save this as a permanent routine called "${routineName}"?`, 'assistant'));
+          speakResponse(`I've noticed you've requested this several times. Would you like me to save this as a permanent routine?`);
+        }
+
+        // Safety Confirmation: if steps > 2, ask first
+        if (workflow.steps.length > 2) {
+          pushResponse(createEntry(`${prefix}: ${result.text} (Requires confirmation for ${workflow.steps.length} steps)`, result.role));
+          speakResponse(`${result.text}. This is a multi-step sequence. Should I proceed?`);
+          setActiveWorkflow(workflow);
+          setWorkflowStatus({ currentStep: -1, completed: [], error: null });
+        } else {
+          // Execute immediately for small workflows
+          pushResponse(createEntry(`${prefix}: ${result.text}`, result.role));
+          speakResponse(result.text);
+          executeWorkflow(workflow);
+        }
+      } else {
+        pushResponse(createEntry(`${prefix}: ${result.text}`, result.role));
+        speakResponse(result.text);
+      }
+
       setSystemStatus((current) => ({ ...current, status: result.provider === 'backend' ? 'ONLINE' : `${result.provider.toUpperCase()} LINK` }));
     } catch (error) {
-      const message = error?.message || 'Unable to process the request.';
+      const message = "Something went wrong. Let me try again.";
       pushResponse(createEntry(`COMM LINK ERROR: ${message}`, 'system'));
       speakResponse(message);
       setSystemStatus((current) => ({ ...current, status: 'LINK ERROR' }));
     } finally {
       finalizeInteraction();
       setIsProcessing(false);
+    }
+  };
+
+  const executeWorkflow = async (workflow) => {
+    setActiveWorkflow(workflow);
+    setWorkflowStatus({ currentStep: 0, completed: [], error: null });
+    
+    try {
+      await workflowService.runWorkflow(
+        workflow.steps,
+        (index, step) => {
+          setWorkflowStatus(prev => ({ ...prev, currentStep: index }));
+          setSystemStatus({ status: `STEP ${index + 1}: ${step.action.toUpperCase()}` });
+        },
+        (index, step) => {
+          setWorkflowStatus(prev => ({ ...prev, completed: [...prev.completed, index] }));
+        }
+      );
+      
+      pushResponse(createEntry(`[JARVIS]: Workflow completed.`, 'action'));
+      speakResponse('Workflow complete.');
+      setSystemStatus({ status: 'WORKFLOW FINISHED' });
+    } catch (error) {
+      setWorkflowStatus(prev => ({ ...prev, error: error.message }));
+      pushResponse(createEntry(`[JARVIS]: Workflow stopped: ${error.message}`, 'system'));
+      speakResponse(`I've encountered an issue: ${error.message}. Stopping the workflow.`);
+      setSystemStatus({ status: 'WORKFLOW FAILED' });
+    } finally {
+      // Clear active workflow after a short delay to show "Completed" state
+      setTimeout(() => {
+        setActiveWorkflow(null);
+        setWorkflowStatus({ currentStep: -1, completed: [], error: null });
+      }, 3000);
     }
   };
 
@@ -505,10 +602,84 @@ function AppContent() {
             {/* Message Area */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar scroll-smooth">
               <ResponsePanel responses={responses} />
+              
+              {/* Workflow Execution Preview */}
+              {activeWorkflow && (
+                <div className="workflow-preview glass-ui rounded-2xl p-6 mb-4 border border-cyan-500/20 bg-cyan-500/5 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Zap size={18} className="text-cyan-400 animate-pulse" />
+                      <h3 className="font-rajdhani text-sm font-bold uppercase tracking-widest text-cyan-100">
+                        Autonomous Workflow
+                      </h3>
+                    </div>
+                    {workflowStatus.currentStep === -1 ? (
+                      <span className="text-[10px] font-bold text-amber-400 uppercase tracking-tighter">Awaiting Confirmation</span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-tighter">
+                        Executing {workflowStatus.currentStep + 1} / {activeWorkflow.steps.length}
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {activeWorkflow.steps.map((step, idx) => (
+                      <div 
+                        key={idx} 
+                        className={`flex items-center gap-3 p-2 rounded-lg transition-all duration-300 ${
+                          workflowStatus.currentStep === idx 
+                            ? 'bg-cyan-500/20 border border-cyan-500/30' 
+                            : workflowStatus.completed.includes(idx)
+                              ? 'opacity-40'
+                              : 'opacity-70'
+                        }`}
+                      >
+                        <div className={`h-2 w-2 rounded-full ${
+                          workflowStatus.currentStep === idx 
+                            ? 'bg-cyan-400 animate-ping' 
+                            : workflowStatus.completed.includes(idx)
+                              ? 'bg-emerald-400'
+                              : 'bg-white/20'
+                        }`} />
+                        <span className="text-xs font-mono text-white/80">
+                          {step.action.replace('_', ' ')}: <span className="text-cyan-300">{step.target}</span>
+                        </span>
+                        {workflowStatus.completed.includes(idx) && (
+                          <span className="ml-auto text-[10px] text-emerald-400 font-bold uppercase tracking-widest">Done</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {workflowStatus.currentStep === -1 && (
+                    <div className="mt-6 flex gap-3">
+                      <button 
+                        onClick={() => executeWorkflow(activeWorkflow)}
+                        className="flex-1 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/40 border border-cyan-500/30 text-cyan-100 text-xs font-bold uppercase tracking-widest transition-all"
+                      >
+                        Execute Plan
+                      </button>
+                      <button 
+                        onClick={() => setActiveWorkflow(null)}
+                        className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 text-xs font-bold uppercase tracking-widest transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+
+                  {workflowStatus.error && (
+                    <div className="mt-4 p-2 rounded bg-red-500/10 border border-red-500/20 text-[10px] text-red-400 font-mono">
+                      ERROR: {workflowStatus.error}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {isProcessing && (
                 <div className="flex items-center justify-center gap-2 py-6">
                   <div className="loader" />
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-400/60 loading-dots">Thinking</span>
+                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-400/60 loading-dots">{currentLoadingMessage}</span>
                 </div>
               )}
             </div>

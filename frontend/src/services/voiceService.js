@@ -114,8 +114,8 @@ class VoiceService {
     this.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
+    utterance.rate = 0.9; // Slower rate
+    utterance.pitch = 0.9; // Slightly lower pitch
     utterance.volume = 1.0;
 
     utterance.onstart = () => {

@@ -94,10 +94,10 @@ const Suggestions = memo(({ onSelect, isSafeMode }) => {
             key={`${item.intent}-${index}-${item.text}`}
             type="button"
             onClick={() => onSelect(actionString)}
-            className={`flex items-center gap-2 rounded-full border px-4 py-2 text-[12px] font-medium transition-all duration-500 ${
+            className={`futuristic-button flex items-center gap-2 rounded-full border px-4 py-2 text-[12px] font-medium ${
               isAnticipated
                 ? 'border-cyan-300/50 bg-cyan-400/10 text-cyan-50 shadow-[0_0_20px_rgba(34,211,238,0.2)] animate-pulse'
-                : 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white/90 hover:scale-105'
+                : 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white/90'
             }`}
           >
             <Icon size={14} className={isAnticipated ? 'text-cyan-300' : 'text-white/50'} />

@@ -11,7 +11,7 @@ class OpenAIProvider {
     this.baseUrl = 'https://api.openai.com/v1/chat/completions';
   }
 
-  async sendMessage(text, options = {}) {
+  async sendMessage(messages, options = {}) {
     const signal = options.signal;
 
     try {
@@ -23,7 +23,7 @@ class OpenAIProvider {
         },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: text }]
+          messages: messages
         }),
         signal
       });
@@ -59,7 +59,7 @@ class GeminiProvider {
     this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
   }
 
-  async sendMessage(text, options = {}) {
+  async sendMessage(messages, options = {}) {
     const signal = options.signal;
 
     try {
@@ -69,7 +69,7 @@ class GeminiProvider {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          contents: [{ parts: [{ text }] }]
+          contents: messages.filter(m => m.role === 'user').map(m => ({ parts: [{ text: m.content }] }))
         }),
         signal
       });
@@ -105,7 +105,7 @@ class ClaudeProvider {
     this.baseUrl = 'https://api.anthropic.com/v1/messages';
   }
 
-  async sendMessage(text, options = {}) {
+  async sendMessage(messages, options = {}) {
     const signal = options.signal;
 
     try {
@@ -120,7 +120,7 @@ class ClaudeProvider {
         body: JSON.stringify({
           model: 'claude-3-haiku-20240307',
           max_tokens: 300,
-          messages: [{ role: 'user', content: text }]
+          messages: messages.map(m => ({ role: m.role === 'system' ? 'user' : m.role, content: m.content })) // Claude doesn't have system role
         }),
         signal
       });

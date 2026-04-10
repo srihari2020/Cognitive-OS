@@ -82,6 +82,35 @@ export const commandRouter = {
         return { handled: true, message: 'Opening downloads.' };
       }
 
+      // 8. Preset Routines
+      if (normalized === 'start coding') {
+        return { 
+          handled: true, 
+          isWorkflow: true, 
+          workflow: {
+            steps: [
+              { action: 'open_app', target: 'vscode' },
+              { action: 'open_url', target: 'https://github.com' }
+            ],
+            message: "Initializing workspace. Opening VS Code and GitHub."
+          }
+        };
+      }
+
+      if (normalized === 'focus mode') {
+        return { 
+          handled: true, 
+          isWorkflow: true, 
+          workflow: {
+            steps: [
+              { action: 'set_volume', target: '10' },
+              { action: 'open_app', target: 'vscode' }
+            ],
+            message: "Activating focus mode. Reducing volume and opening VS Code."
+          }
+        };
+      }
+
       // 7. System Info
       if (/^(system info|show system info|system status|check system)\b/i.test(normalized)) {
         const info = await bridge.getSystemInfo();
