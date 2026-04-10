@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 import uvicorn
 import os
 import sys
@@ -93,7 +94,28 @@ def safe_log_error(message):
             pass
 
 
-app = FastAPI(title="Cognitive OS API Bridge")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for application startup and shutdown."""
+    # STARTUP
+    safe_log("SYSTEM", "API bridge startup")
+    if wake_listener:
+        try:
+            wake_listener.start()
+        except Exception:
+            pass
+    
+    yield
+    
+    # SHUTDOWN
+    safe_log("SYSTEM", "API bridge shutdown")
+    if wake_listener:
+        try:
+            wake_listener.stop()
+        except Exception:
+            pass
+
+app = FastAPI(title="Cognitive OS API Bridge", lifespan=lifespan)
 
 # Enable CORS for React frontend
 app.add_middleware(
@@ -354,26 +376,6 @@ async def consume_wake_word():
     if wake_controller:
         return wake_controller.consume()
     return {"triggered": False, "timestamp": 0}
-
-
-@app.on_event("startup")
-async def startup_event():
-    safe_log("SYSTEM", "API bridge startup")
-    if wake_listener:
-        try:
-            wake_listener.start()
-        except Exception:
-            pass
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    safe_log("SYSTEM", "API bridge shutdown")
-    if wake_listener:
-        try:
-            wake_listener.stop()
-        except Exception:
-            pass
 
 if __name__ == "__main__":
     print("Cognitive OS Backend starting on http://localhost:8000")

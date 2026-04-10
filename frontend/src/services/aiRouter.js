@@ -1,5 +1,6 @@
 
 import { providers, credentialManager } from './aiProviders';
+import { memoryStore } from './memoryStore';
 
 const JARVIS_SYSTEM_PROMPT = `You are JARVIS — a smart, calm, slightly witty AI assistant. You respond clearly, concisely, and helpfully. Avoid long paragraphs. Sound human, not robotic.
 
@@ -20,6 +21,8 @@ If the user's intent involves multiple steps or a complex action that you can au
 ONLY use these actions: open_app, open_url, open_folder, set_volume, search_google.
 If it's a simple conversational query, just respond with plain text.`;
 
+const FRIDAY_SYSTEM_PROMPT = `You are FRIDAY: calm, concise, helpful. 1–2 sentences max.`;
+
 /**
  * Intelligent Unified Router for Multi-AI Provider system.
  * Handles auto-fallback, light caching, and timeout control.
@@ -37,6 +40,11 @@ class AIRouter {
    * Routes a request to the first available provider in the chain.
    */
   async route(text, options = {}) {
+    const persona = options.persona || 'JARVIS';
+    const selectedProviders = options.providers && options.providers.length ? options.providers : (persona === 'FRIDAY' ? ['OpenAI', 'Gemini'] : this.fallbackChain);
+    const maxSentences = options.maxSentences || (persona === 'FRIDAY' ? 2 : 3);
+    const systemPrompt = persona === 'FRIDAY' ? FRIDAY_SYSTEM_PROMPT : JARVIS_SYSTEM_PROMPT;
+
     // 0. Check Cache
     if (this.cache.has(text)) {
       return this.cache.get(text);
@@ -51,15 +59,21 @@ class AIRouter {
     const keys = credentialManager.loadKeys();
     let lastError = null;
 
+    // Use memoryStore for context (last 4 items)
+    const context = memoryStore.getRecentHistory(4).map(m => ({
+      role: m.role,
+      content: m.text
+    }));
+
     // Prepare messages for AI, including system prompt and context
     const messages = [
-      { role: 'system', content: JARVIS_SYSTEM_PROMPT },
-      ...this.contextMemory,
+      { role: 'system', content: systemPrompt },
+      ...context,
       { role: 'user', content: text }
     ];
 
     // 2. Iterate through fallback chain
-    for (const providerName of this.fallbackChain) {
+    for (const providerName of selectedProviders) {
       const apiKey = keys[providerName];
       if (!apiKey) continue; // Skip if key missing
 
@@ -93,11 +107,11 @@ class AIRouter {
               };
             } catch (e) {
               // Fallback to text if JSON parse fails
-              const cleanedText = this._cleanResponse(response.text);
+              const cleanedText = this._cleanResponse(response.text, maxSentences);
               result = { ...response, text: cleanedText, provider: providerName };
             }
           } else {
-            const cleanedText = this._cleanResponse(response.text);
+            const cleanedText = this._cleanResponse(response.text, maxSentences);
             result = { ...response, text: cleanedText, provider: providerName };
           }
 
@@ -115,18 +129,17 @@ class AIRouter {
     }
 
     return {
-      text: lastError || "Something went wrong. Let me try again.",
+      text: lastError || "I’m having trouble reaching the service.",
       status: 'ERROR',
       provider: 'ROUTER'
     };
   }
 
-  _cleanResponse(text) {
-    // Remove extra new lines, limit to 2-3 sentences, trim
+  _cleanResponse(text, maxSentences = 3) {
     let cleaned = text.replace(/(\r\n|\n|\r){2,}/gm, '\n').trim();
     const sentences = cleaned.split(/(?<=[.!?])\s+/);
-    if (sentences.length > 3) {
-      cleaned = sentences.slice(0, 3).join(' ') + (sentences.length > 3 ? '...' : '');
+    if (sentences.length > maxSentences) {
+      cleaned = sentences.slice(0, maxSentences).join(' ') + (sentences.length > maxSentences ? '...' : '');
     }
     return cleaned;
   }

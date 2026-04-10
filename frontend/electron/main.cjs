@@ -12,15 +12,18 @@ app.disableHardwareAcceleration();
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL || "http://127.0.0.1:5173";
 const isDev = !app.isPackaged;
-const HOTKEY = "CommandOrControl+Shift+Space";
+const HOTKEY = "Alt+Space";
+const FULL_HOTKEY = "CommandOrControl+Shift+Space";
 const STABILITY_MODE = false;
 const MODE_SIZES = {
   idle: { width: 1200, height: 800 },
   active: { width: 1200, height: 800 },
   processing: { width: 1200, height: 800 },
+  overlay: { width: 440, height: 160 },
 };
 
 let mainWindow = null;
+let overlayWindow = null;
 let currentMode = "active";
 let isPointerNearOrb = false;
 let isClickThroughEnabled = false;
@@ -110,12 +113,12 @@ function stopBackend() {
   }
 }
 
-function positionWindowAtBottomRight(win, width, height) {
+function positionWindowTopCenter(win, width, height) {
   const display = screen.getPrimaryDisplay();
-  const { x, y, width: workWidth, height: workHeight } = display.workArea;
-  const margin = 20;
-  const targetX = x + workWidth - width - margin;
-  const targetY = y + workHeight - height - margin;
+  const { x, y, width: workWidth } = display.workArea;
+  const marginTop = 18;
+  const targetX = x + Math.round((workWidth - width) / 2);
+  const targetY = y + marginTop;
   win.setBounds({ x: targetX, y: targetY, width, height }, true);
 }
 
@@ -198,13 +201,69 @@ function createMainWindow() {
   });
 }
 
+function createOverlayWindow() {
+  const preloadPath = path.join(__dirname, "preload.cjs");
+  const iconPath = getIconPath();
+  const overlayWidth = 420;
+  const overlayHeight = 120;
+
+  overlayWindow = new BrowserWindow({
+    width: overlayWidth,
+    height: overlayHeight,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    show: false,
+    icon: iconPath,
+    webPreferences: {
+      preload: preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      devTools: isDev,
+    },
+  });
+
+  overlayWindow.setAlwaysOnTop(true, "screen-saver");
+  overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  overlayWindow.setMenuBarVisibility(false);
+  positionWindowTopCenter(overlayWindow, overlayWidth, overlayHeight);
+
+  if (app.isPackaged) {
+    const indexPath = path.join(__dirname, "..", "dist", "index.html");
+    overlayWindow.loadFile(indexPath, { search: "overlay=1" });
+  } else {
+    overlayWindow.loadURL(`${DEV_URL}?overlay=1`);
+  }
+
+  overlayWindow.on("blur", () => {
+    if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+      overlayWindow.hide();
+    }
+  });
+
+  overlayWindow.on("closed", () => {
+    overlayWindow = null;
+  });
+}
+
 function registerHotkey() {
   globalShortcut.register(HOTKEY, () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (mainWindow.isVisible()) {
-      mainWindow.hide();
+    if (!overlayWindow || overlayWindow.isDestroyed()) return;
+    if (overlayWindow.isVisible()) {
+      overlayWindow.hide();
       return;
     }
+    overlayWindow.show();
+    overlayWindow.focus();
+    overlayWindow.webContents.send("assistant:visibility", { visible: true, mode: "overlay" });
+  });
+
+  globalShortcut.register(FULL_HOTKEY, () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
     mainWindow.show();
     mainWindow.focus();
     mainWindow.webContents.send("assistant:visibility", { visible: true, mode: currentMode });
@@ -270,6 +329,7 @@ app.whenReady().then(() => {
   });
 
   createMainWindow();
+  createOverlayWindow();
   registerHotkey();
   configureAutoUpdater();
 });
@@ -309,14 +369,20 @@ ipcMain.handle("assistant:set-orb-proximity", (_event, isNear) => {
 });
 
 ipcMain.handle("assistant:toggle", () => {
-  if (!mainWindow || mainWindow.isDestroyed()) return { visible: false };
-  if (mainWindow.isVisible()) {
-    mainWindow.hide();
+  if (!overlayWindow || overlayWindow.isDestroyed()) return { visible: false };
+  if (overlayWindow.isVisible()) {
+    overlayWindow.hide();
     return { visible: false };
   }
-  mainWindow.show();
-  mainWindow.focus();
+  overlayWindow.show();
+  overlayWindow.focus();
   return { visible: true };
+});
+
+ipcMain.handle("assistant:hide-overlay", () => {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return { visible: false };
+  overlayWindow.hide();
+  return { visible: false };
 });
 
 ipcMain.handle("assistant:open-external", async (_event, url) => {

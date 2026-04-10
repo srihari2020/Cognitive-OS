@@ -47,10 +47,15 @@ const DEFAULT_SUGGESTIONS = [
   { text: "Open VS Code", intent: "OPEN_CODE", icon: "Zap", isProactive: false }
 ];
 
-const Suggestions = memo(({ onSelect, isSafeMode }) => {
+const Suggestions = memo(({ onSelect, isSafeMode, extraSuggestions = [] }) => {
   const { anticipation, intensity, behaviorMode } = useUI();
   const [suggestions, setSuggestions] = useState([]);
   const timeoutRef = useRef(null);
+
+  const combinedSuggestions = [
+    ...(extraSuggestions.map(text => ({ text, intent: 'FOLLOW_UP', icon: 'Sparkles', isProactive: true }))),
+    ...suggestions
+  ].slice(0, 5);
 
   useEffect(() => {
     let running = true;
@@ -96,11 +101,11 @@ const Suggestions = memo(({ onSelect, isSafeMode }) => {
     }
   }, [anticipation]);
 
-  if (!suggestions.length || behaviorMode === 'active') return null;
+  if (!combinedSuggestions.length || behaviorMode === 'active') return null;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {suggestions.map((item, index) => {
+      {combinedSuggestions.map((item, index) => {
         const renderIcon = getIcon(item.icon) || getIcon(item.intent);
         const isAnticipated = item.isProactive || (anticipation && index === 0 && intensity > 0.5 && !isSafeMode);
         const actionString = item.executeRaw || item.action || item.text;

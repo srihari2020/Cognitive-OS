@@ -8,7 +8,9 @@ import { commandRouter } from './services/commandRouter';
 import { contextStore } from './services/contextStore';
 import { commandService } from './services/api';
 import { aiRouter } from './services/aiRouter';
+import { memoryStore } from './services/memoryStore';
 import { workflowService } from './services/workflowService';
+import { intentService } from './services/intentService';
 import { UIProvider, useUI } from './context/UIContext';
 import { voiceService } from './services/voiceService';
 
@@ -33,6 +35,12 @@ const createEntry = (text, role = 'assistant', extra = {}) => ({
   ...extra,
 });
 
+const OVERLAY_QUICK_SUGGESTIONS = [
+  'System status',
+  'Open VS Code',
+  'Quick search',
+];
+
 function AppContent() {
   const [featureFlags, setFeatureFlags] = useState(INITIAL_FEATURE_FLAGS);
   const [responses, setResponses] = useState([
@@ -54,8 +62,10 @@ function AppContent() {
   const [activeWorkflow, setActiveWorkflow] = useState(null);
   const [workflowStatus, setWorkflowStatus] = useState({ currentStep: -1, completed: [], error: null });
   const [commandHistory, setCommandHistory] = useState([]);
+  const [followUpSuggestions, setFollowUpSuggestions] = useState([]);
   const [idleIntentLevel, setIdleIntentLevel] = useState('low');
   const scrollRef = useRef(null);
+  const overlayShellRef = useRef(null);
   const lifecycleTimeoutsRef = useRef([]);
   const orbButtonRef = useRef(null);
   const lastOrbNearRef = useRef(false);
@@ -76,8 +86,12 @@ function AppContent() {
     "Processing...",
   ];
   const [currentLoadingMessage, setCurrentLoadingMessage] = useState(LOADING_MESSAGES[0]);
+  const [overlayVisible, setOverlayVisible] = useState(false);
+  const isElectronOverlay = Boolean(window.electronAssistant);
+  const isCompactOverlay = isElectronOverlay && new URLSearchParams(window.location.search).get('overlay') === '1';
 
   useEffect(() => {
+    if (isCompactOverlay) return;
     let interval;
     if (isProcessing) {
       interval = setInterval(() => {
@@ -87,9 +101,8 @@ function AppContent() {
       setCurrentLoadingMessage(LOADING_MESSAGES[0]); // Reset to default
     }
     return () => clearInterval(interval);
-  }, [isProcessing]);
+  }, [isCompactOverlay, isProcessing]);
   
-  const isElectronOverlay = Boolean(window.electronAssistant);
   const {
     uiMode,
     setUiMode,
@@ -128,15 +141,17 @@ function AppContent() {
 
   // 2. STABILITY: Single async loop for status if needed, otherwise events only
   useEffect(() => {
+    if (isCompactOverlay) return;
     const intervalId = setInterval(() => {
       if (isBackendOffline) {
         setSystemStatus({ status: 'OFFLINE', latency: '0MS' });
       }
     }, 5000); // 5s interval as requested for stability
     return () => clearInterval(intervalId);
-  }, [isBackendOffline]);
+  }, [isBackendOffline, isCompactOverlay]);
 
   useEffect(() => {
+    if (isCompactOverlay) return;
     // Initialize Voice Service - Click to speak mode
     voiceService.onTranscript = (transcript) => {
       if (transcript.length > 0) {
@@ -162,9 +177,10 @@ function AppContent() {
       voiceService.stop();
       voiceService.cancel();
     };
-  }, []);
+  }, [isCompactOverlay]);
 
   useEffect(() => {
+    if (isCompactOverlay) return;
     if (scrollRef.current) {
       scrollRef.current.scrollTo({
         top: scrollRef.current.scrollHeight,
@@ -175,18 +191,48 @@ function AppContent() {
     if (responses.length > 30) {
       setResponses((current) => current.slice(-30));
     }
-  }, [responses]);
+  }, [responses, activeWorkflow, isCompactOverlay, isProcessing]);
 
   useEffect(() => {
+    if (!isCompactOverlay) return;
+    const frameId = requestAnimationFrame(() => setOverlayVisible(true));
+    return () => cancelAnimationFrame(frameId);
+  }, [isCompactOverlay]);
+
+  useEffect(() => {
+    if (!isCompactOverlay) return;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        window.electron?.invoke?.('toggle');
+      }
+    };
+    const onMouseDown = (event) => {
+      const shell = overlayShellRef.current;
+      if (shell && !shell.contains(event.target)) {
+        window.electronAssistant?.hideOverlay?.();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    document.addEventListener('mousedown', onMouseDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('mousedown', onMouseDown);
+    };
+  }, [isCompactOverlay]);
+
+  useEffect(() => {
+    if (isCompactOverlay) return;
     clearLifecycleTimeouts();
     setIsMerging(false);
     setIsDomainActive(false);
     if (performanceTier === 'critical') {
       setAnimationState('IDLE');
     }
-  }, [cleanupSignal, performanceTier]);
+  }, [cleanupSignal, isCompactOverlay, performanceTier]);
 
   useEffect(() => {
+    if (isCompactOverlay) return;
     let mounted = true;
     if (!window.electronAssistant?.getRuntimeConfig) return;
 
@@ -203,10 +249,10 @@ function AppContent() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isCompactOverlay]);
 
   useEffect(() => {
-    if (!isElectronOverlay) return;
+    if (!isElectronOverlay || isCompactOverlay) return;
     const nextMode = (isProcessing || isMerging || isDomainActive) ? 'processing' : assistantMode;
     window.electronAssistant.setMode(nextMode);
     if ((typeof stabilityMode !== 'undefined' && stabilityMode) || nextMode !== 'idle') {
@@ -216,10 +262,10 @@ function AppContent() {
       window.electronAssistant.setOrbProximity(false);
       window.electronAssistant.setClickThrough(true);
     }
-  }, [assistantMode, isElectronOverlay, isMerging, isProcessing, isDomainActive, stabilityMode]);
+  }, [assistantMode, isCompactOverlay, isElectronOverlay, isMerging, isProcessing, isDomainActive, stabilityMode]);
 
   useEffect(() => {
-    if (!isElectronOverlay || assistantMode !== 'idle' || (typeof stabilityMode !== 'undefined' && stabilityMode) || !featureFlags.enableOrbAnimation) return;
+    if (!isElectronOverlay || isCompactOverlay || assistantMode !== 'idle' || (typeof stabilityMode !== 'undefined' && stabilityMode) || !featureFlags.enableOrbAnimation) return;
     let frameId = null;
     let pendingMouse = null;
     const toUnit = (value) => Math.max(0, Math.min(1, value));
@@ -305,10 +351,10 @@ function AppContent() {
       setIdleIntentLevel('low');
       window.electronAssistant.setOrbProximity(false);
     };
-  }, [assistantMode, featureFlags.enableOrbAnimation, isElectronOverlay, stabilityMode]);
+  }, [assistantMode, featureFlags.enableOrbAnimation, isCompactOverlay, isElectronOverlay, stabilityMode]);
 
   useEffect(() => {
-    if (!isElectronOverlay) return;
+    if (!isElectronOverlay || isCompactOverlay) return;
 
     const unsubscribeVisibility = window.electronAssistant.onVisibilityChange((payload) => {
       if (payload?.visible) {
@@ -325,9 +371,10 @@ function AppContent() {
       unsubscribeVisibility?.();
       unsubscribeUpdate?.();
     };
-  }, [isElectronOverlay]);
+  }, [isCompactOverlay, isElectronOverlay]);
 
   useEffect(() => {
+    if (isCompactOverlay) return;
     if (stabilityMode || PARTIAL_SAFE_MODE || isBackendOffline) return;
     let mounted = true;
 
@@ -343,7 +390,7 @@ function AppContent() {
       mounted = false;
       clearInterval(intervalId);
     };
-  }, [isBackendOffline, isMerging, isProcessing, isDomainActive, stabilityMode]);
+  }, [isBackendOffline, isCompactOverlay, isMerging, isProcessing, isDomainActive, stabilityMode]);
 
   const pushResponse = (entry) => {
     setResponses((current) => [...current, entry].slice(-30));
@@ -385,7 +432,11 @@ function AppContent() {
     }
 
     // Direct AI routing with fallback
-    const aiResponse = await aiRouter.route(prompt);
+    const aiResponse = await aiRouter.route(prompt, {
+      persona: 'FRIDAY',
+      providers: ['OpenAI', 'Gemini'],
+      maxSentences: 2
+    });
     return {
       text: aiResponse.text,
       provider: aiResponse.provider,
@@ -397,6 +448,18 @@ function AppContent() {
     const prompt = text.trim();
     if (!prompt || isProcessing || activeWorkflow) return;
 
+    // Reset follow-ups on new command
+    setFollowUpSuggestions([]);
+
+    // RESET OPTION: clear memory
+    if (prompt.toLowerCase() === 'clear memory') {
+      memoryStore.clear();
+      contextStore.clear();
+      setResponses([createEntry('Memory cleared. New session started.', 'system')]);
+      speakResponse('Memory cleared.');
+      return;
+    }
+
     // Interrupt any current speaking when a new command is issued
     voiceService.cancel();
 
@@ -406,6 +469,9 @@ function AppContent() {
     setIsProcessing(true);
     setAnimationState('PROCESSING');
     
+    // Memory Store: Save user input
+    memoryStore.saveMessage('user', prompt);
+
     // Minimal interaction logic
     pushResponse(createEntry(prompt, 'user'));
     contextStore.recordAction('command', prompt);
@@ -415,9 +481,35 @@ function AppContent() {
     setCommandHistory(updatedHistory);
 
     try {
+      // 0. Intent Fast-Path
+      const quickIntent = intentService.detectIntent(prompt);
+      if (quickIntent) {
+        try {
+          const reply = await intentService.handleIntent(quickIntent);
+          
+          // Memory Store: Save action + assistant response
+          memoryStore.saveAction(prompt);
+          memoryStore.saveMessage('assistant', reply);
+          setFollowUpSuggestions(['Want me to open something else?', 'Search more on this?']);
+
+          pushResponse(createEntry(`[FRIDAY]: ${reply}`, 'action'));
+          speakResponse(reply);
+          setSystemStatus((current) => ({ ...current, status: 'ACTION COMPLETE' }));
+          return;
+        } catch {
+          // Silent failover to next handler
+        }
+      }
+
       // 1. Local Command Routing (Regex/Hardcoded)
       const localRoute = await commandRouter.route(prompt);
       if (localRoute.handled) {
+        // Memory Store: Save action + assistant response
+        memoryStore.saveAction(prompt);
+        const replyText = localRoute.isWorkflow ? localRoute.workflow.message : localRoute.message;
+        memoryStore.saveMessage('assistant', replyText);
+        setFollowUpSuggestions(['Want me to open something else?', 'Search more on this?']);
+
         if (localRoute.isWorkflow) {
           pushResponse(createEntry(`[FRIDAY]: ${localRoute.workflow.message}`, 'action'));
           speakResponse(localRoute.workflow.message);
@@ -436,8 +528,15 @@ function AppContent() {
       const result = await resolveAssistantResponse(prompt);
       const prefix = result.provider && result.provider !== 'backend' ? `[${result.provider}]` : '[FRIDAY]';
       
+      // Memory Store: Save assistant response
+      memoryStore.saveMessage('assistant', result.text);
+
       // Check for workflow in result
       if (result.workflow && result.workflow.steps?.length > 0) {
+        // Memory Store: Save action for workflows too
+        memoryStore.saveAction(prompt);
+        setFollowUpSuggestions(['Want me to open something else?', 'Search more on this?']);
+
         const workflow = result.workflow;
         
         // Auto-Learning Check: If this is a repeat command, suggest saving
@@ -467,13 +566,20 @@ function AppContent() {
 
       setSystemStatus((current) => ({ ...current, status: result.provider === 'backend' ? 'ONLINE' : `${result.provider.toUpperCase()} LINK` }));
     } catch (error) {
-      const message = "Something went wrong. Let me try again.";
+      const message = "I’m having trouble reaching the service.";
+      
+      // Memory Store: Save assistant error response
+      memoryStore.saveMessage('assistant', message);
+
       pushResponse(createEntry(`COMM LINK ERROR: ${message}`, 'system'));
       speakResponse(message);
       setSystemStatus((current) => ({ ...current, status: 'LINK ERROR' }));
     } finally {
       finalizeInteraction();
       setIsProcessing(false);
+      if (isCompactOverlay) {
+        window.electronAssistant?.hideOverlay?.();
+      }
     }
   };
 
@@ -533,6 +639,37 @@ function AppContent() {
       />
     </button>
   );
+
+  if (isCompactOverlay) {
+    return (
+      <div className={`overlay h-screen w-screen ${overlayVisible ? 'show' : ''}`}>
+        <div
+          ref={overlayShellRef}
+          className="mx-auto mt-2 w-full max-w-[420px] rounded-2xl border border-white/15 bg-[#0a1222]/95 p-3 shadow-[0_18px_48px_rgba(0,0,0,0.55)] backdrop-blur-md"
+        >
+          <div className="mb-2 flex gap-2">
+            {OVERLAY_QUICK_SUGGESTIONS.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setDraft(item)}
+                className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/70 hover:border-cyan-400/30 hover:text-cyan-200"
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+          <InputBox
+            value={draft}
+            onChange={setDraft}
+            onSend={handleSendCommand}
+            isProcessing={isProcessing}
+            isListening={isVoiceListening}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -663,7 +800,7 @@ function AppContent() {
             <div className="sticky bottom-0 z-20 bg-[#0a0f19]/90 backdrop-blur-md p-4 border-t border-white/10">
               <div className="mx-auto max-w-[900px] flex flex-col gap-3">
                 {featureFlags.enableSuggestions && !isProcessing && (
-                  <Suggestions onSelect={setDraft} isSafeMode={PARTIAL_SAFE_MODE} />
+                  <Suggestions onSelect={setDraft} isSafeMode={PARTIAL_SAFE_MODE} extraSuggestions={followUpSuggestions} />
                 )}
                 <div className="relative">
                   <InputBox

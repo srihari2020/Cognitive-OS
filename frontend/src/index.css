@@ -73,6 +73,15 @@
     z-index: 0;
   }
 
+  body.overlay-mode {
+    background: transparent;
+  }
+
+  body.overlay-mode::before,
+  body.overlay-mode::after {
+    display: none;
+  }
+
   #root {
     height: 100vh;
     display: flex;
@@ -171,6 +180,17 @@
   /* ─── Processing orb ─── */
   .friday-orb-processing {
     animation: friday-breathe 2s ease-in-out infinite;
+  }
+
+  .overlay {
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+
+  .overlay.show {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("electronAssistant", {
   setVolume: (level) => ipcRenderer.invoke("assistant:set-volume", level),
   getVolume: () => ipcRenderer.invoke("assistant:get-volume"),
   getSystemInfo: () => ipcRenderer.invoke("assistant:get-system-info"),
+  hideOverlay: () => ipcRenderer.invoke("assistant:hide-overlay"),
   onVisibilityChange: (callback) => {
     if (typeof callback !== "function") return () => {};
     const handler = (_event, payload) => callback(payload);
@@ -23,5 +24,13 @@ contextBridge.exposeInMainWorld("electronAssistant", {
     const handler = () => callback();
     ipcRenderer.on("assistant:update-ready", handler);
     return () => ipcRenderer.removeListener("assistant:update-ready", handler);
+  },
+});
+
+contextBridge.exposeInMainWorld("electron", {
+  invoke: (channel, payload) => {
+    if (channel === "toggle") return ipcRenderer.invoke("assistant:toggle");
+    if (channel === "hideOverlay") return ipcRenderer.invoke("assistant:hide-overlay", payload);
+    return Promise.resolve({ ok: false, error: "Unsupported channel" });
   },
 });
