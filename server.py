@@ -9,6 +9,7 @@ import sys
 import subprocess
 import platform
 import webbrowser
+from urllib.parse import quote_plus
 
 # Ensure project root is in path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -185,16 +186,93 @@ def get_system_info():
     return info
 
 
+APP_MAP = {
+    "vscode": "code",
+    "vs code": "code",
+    "chrome": "chrome",
+    "docker": "Docker Desktop",
+    "settings": "ms-settings:",
+    "notepad": "notepad",
+}
+
+DANGEROUS_TERMS = (" rm ", " del ", " format ", " rmdir ", " shutdown ", " powershell -enc ")
+
+
+def is_dangerous_input(text: str) -> bool:
+    normalized = f" {text.strip().lower()} "
+    return any(term in normalized for term in DANGEROUS_TERMS)
+
+
+def open_app(name: str):
+    name = name.lower().strip()
+    try:
+        # Windows special URIs / commands
+        if name == "settings":
+            subprocess.Popen("start ms-settings:", shell=True)
+            return "Opening Settings."
+
+        if name == "task manager" or name == "taskmgr":
+            subprocess.Popen("taskmgr", shell=True)
+            return "Opening Task Manager."
+
+        if name == "control panel":
+            subprocess.Popen("control", shell=True)
+            return "Opening Control Panel."
+
+        if name == "docker":
+            subprocess.Popen('"C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe"', shell=True)
+            return "Opening Docker."
+
+        # Use APP_MAP for common aliases
+        target = APP_MAP.get(name, name)
+        
+        # Generic fallback
+        subprocess.Popen(f'start "" "{target}"', shell=True)
+        return f"Opening {name.title()}."
+
+    except Exception:
+        return f"Couldn't open {name}."
+
+
+
 @app.post("/api/interaction")
 async def handle_interaction(data: InteractionInput):
     """
     Unified command handler for browser mode.
     Receives { "input": "open vscode" } and executes the command.
     """
-    text = data.input.strip().lower()
+    raw_text = (data.input or "").strip()
+    text = raw_text.lower()
     safe_log("API", f"Interaction received: {text}")
 
     try:
+        if not text:
+            return {"response": "On it."}
+
+        if is_dangerous_input(text):
+            return {"response": "Blocked for safety."}
+
+        # Explicit search command: search <query>
+        if text.startswith("search "):
+            query = raw_text[len("search "):].strip()
+            if not query:
+                return {"response": "What should I search?"}
+            encoded_query = quote_plus(query)
+            subprocess.Popen(
+                f'start "" "chrome" "https://www.google.com/search?q={encoded_query}"',
+                shell=True
+            )
+            return {"response": "On it."}
+
+        # Unified app open flow
+        if text.startswith("open "):
+            app_name = raw_text.replace("open", "", 1).strip()
+            return {"response": open_app(app_name)}
+
+        if text.startswith("launch "):
+            app_name = raw_text.replace("launch", "", 1).strip()
+            return {"response": open_app(app_name)}
+
         # VS Code
         if any(kw in text for kw in ["open vscode", "open vs code", "open code", "launch vscode", "launch code"]):
             subprocess.Popen("code", shell=True)
@@ -213,18 +291,17 @@ async def handle_interaction(data: InteractionInput):
                 webbrowser.open("https://google.com")
             return {"response": "Opening browser."}
 
-        # Google Search
+        # Google Search (compat fallback)
         if "search" in text:
-            # Extract query after "search" or "search for" or "search google for"
             query = text
             for prefix in ["search google for", "search for", "google", "search"]:
                 if query.startswith(prefix):
                     query = query[len(prefix):].strip()
                     break
             if query:
-                webbrowser.open(f"https://www.google.com/search?q={query}")
-                return {"response": f"Searching for: {query}"}
-            return {"response": "What would you like to search for?"}
+                webbrowser.open(f"https://www.google.com/search?q={quote_plus(query)}")
+                return {"response": "On it."}
+            return {"response": "What should I search?"}
 
         # System Info
         if any(kw in text for kw in ["system info", "system status", "check system", "show system"]):
@@ -250,14 +327,6 @@ async def handle_interaction(data: InteractionInput):
                 downloads = os.path.join(os.path.expanduser("~"), "Downloads")
                 subprocess.Popen(f'explorer "{downloads}"', shell=True)
             return {"response": "Opening downloads folder."}
-
-        # Open any app (generic)
-        if text.startswith("open ") or text.startswith("launch "):
-            app_name = text.replace("open ", "").replace("launch ", "").strip()
-            if platform.system() == "Windows":
-                subprocess.Popen(f"start {app_name}", shell=True)
-                return {"response": f"Attempting to open {app_name}."}
-            return {"response": f"Cannot open {app_name} on this platform."}
 
         # Not recognized — pass to orchestrator if available
         if router:
