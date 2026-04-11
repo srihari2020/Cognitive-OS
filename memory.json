@@ -1,54 +1,62 @@
 {
     "history": [
         {
-            "timestamp": "2026-04-11T12:04:44.880006",
-            "command": "open Calender",
+            "timestamp": "2026-04-11T12:16:57.071781",
+            "command": "open todo",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "calender"
+                "app_name": "todo",
+                "resolved_app_target": "microsoft-to-do:",
+                "resolved_app_display": "Microsofttodo"
             }
         },
         {
-            "timestamp": "2026-04-11T12:05:06.041866",
-            "command": "open File Explorer",
+            "timestamp": "2026-04-11T12:17:17.479682",
+            "command": "open paint",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "file explorer",
-                "resolved_app_target": "C:\\Users\\sriha\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\File Explorer.lnk",
-                "resolved_app_display": "File Explorer"
+                "app_name": "paint",
+                "resolved_app_target": "C:\\Program Files\\WindowsApps\\Microsoft.Paint_11.2601.401.0_x64__8wekyb3d8bbwe\\PaintApp\\mspaint.exe",
+                "resolved_app_display": "mspaint"
             }
         },
         {
-            "timestamp": "2026-04-11T12:05:31.502812",
-            "command": "open Copilet",
+            "timestamp": "2026-04-11T12:17:30.726383",
+            "command": "open copilet",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "copilet"
+                "app_name": "copilet",
+                "resolved_app_target": "microsoft-edge-copilot:",
+                "resolved_app_display": "Copilot"
             }
         },
         {
-            "timestamp": "2026-04-11T12:05:49.902299",
-            "command": "open copilot",
+            "timestamp": "2026-04-11T12:17:55.396109",
+            "command": "open word",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "copilot"
+                "app_name": "word",
+                "resolved_app_target": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Word.lnk",
+                "resolved_app_display": "Word"
             }
         },
         {
-            "timestamp": "2026-04-11T12:06:12.625090",
-            "command": "open Spotify",
+            "timestamp": "2026-04-11T12:18:07.534322",
+            "command": "open hydra",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "spotify"
+                "app_name": "hydra",
+                "resolved_app_target": "C:\\Users\\sriha\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Hydra.lnk",
+                "resolved_app_display": "Hydra"
             }
         }
     ],
     "last_apps": [
-        "calender",
-        "file explorer",
+        "todo",
+        "paint",
         "copilet",
-        "copilot",
-        "spotify"
+        "word",
+        "hydra"
     ],
     "last_search_query": ""
 }

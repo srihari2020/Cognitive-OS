@@ -123,10 +123,15 @@ class ActionEngine:
 
     def _open_vscode(self, entities):
         try:
-            subprocess.Popen(["code"], shell=True)
+            # Try to resolve 'vscode' from registry first for accuracy
+            target, display = self._resolve_app("vscode")
+            if target:
+                subprocess.Popen(f'start "" "{target}"', shell=True)
+            else:
+                subprocess.Popen(["code"], shell=True)
             return {"status": "SUCCESS", "message": "Opening Visual Studio Code."}
         except Exception as e:
-            return {"status": "FAILED", "message": f"Couldn't open Visual Studio Code."}
+            return {"status": "FAILED", "message": "Couldn't open Visual Studio Code."}
 
     def _open_any_app(self, entities):
         target = entities.get("resolved_app_target")
@@ -144,11 +149,19 @@ class ActionEngine:
 
         try:
             if platform.system() == "Windows":
-                subprocess.Popen(f'start "" "{target}"', shell=True)
+                # Check if it's a URI or a file path
+                if ":" in target and not os.path.isabs(target):
+                    # URI (e.g., ms-settings:)
+                    subprocess.Popen(f'start {target}', shell=True)
+                else:
+                    # File path (.exe or .lnk)
+                    subprocess.Popen(f'start "" "{target}"', shell=True)
+                
                 return {"status": "SUCCESS", "message": f"Opening {display_name}."}
             else:
                 return {"status": "FAILED", "message": "OS not supported for app launching."}
         except Exception as e:
+            logger.log_error(f"Execution error for {target}: {e}")
             return {"status": "FAILED", "message": f"I couldn't find that app."}
 
     def _google_search(self, entities):
