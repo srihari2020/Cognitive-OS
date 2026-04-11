@@ -239,109 +239,32 @@ def open_app(name: str):
 async def handle_interaction(data: InteractionInput):
     """
     Unified command handler for browser mode.
-    Receives { "input": "open vscode" } and executes the command.
+    Delegates to the multi-agent router for true intent-based processing.
     """
     raw_text = (data.input or "").strip()
-    text = raw_text.lower()
-    safe_log("API", f"Interaction received: {text}")
+    if not raw_text:
+        return {"response": "On it."}
 
-    try:
-        if not text:
-            return {"response": "On it."}
+    if is_dangerous_input(raw_text):
+        return {"response": "Blocked for safety."}
 
-        if is_dangerous_input(text):
-            return {"response": "Blocked for safety."}
+    safe_log("API", f"Processing interaction: {raw_text}")
 
-        # Explicit search command: search <query>
-        if text.startswith("search "):
-            query = raw_text[len("search "):].strip()
-            if not query:
-                return {"response": "What should I search?"}
-            encoded_query = quote_plus(query)
-            subprocess.Popen(
-                f'start "" "chrome" "https://www.google.com/search?q={encoded_query}"',
-                shell=True
-            )
-            return {"response": "On it."}
-
-        # Unified app open flow
-        if text.startswith("open "):
-            app_name = raw_text.replace("open", "", 1).strip()
-            return {"response": open_app(app_name)}
-
-        if text.startswith("launch "):
-            app_name = raw_text.replace("launch", "", 1).strip()
-            return {"response": open_app(app_name)}
-
-        # VS Code
-        if any(kw in text for kw in ["open vscode", "open vs code", "open code", "launch vscode", "launch code"]):
-            subprocess.Popen("code", shell=True)
-            return {"response": "Opening VS Code."}
-
-        # YouTube
-        if "youtube" in text and ("open" in text or "launch" in text):
-            webbrowser.open("https://youtube.com")
-            return {"response": "Opening YouTube."}
-
-        # Chrome / Browser
-        if any(kw in text for kw in ["open chrome", "launch chrome", "open browser"]):
-            if platform.system() == "Windows":
-                subprocess.Popen('start chrome', shell=True)
-            else:
-                webbrowser.open("https://google.com")
-            return {"response": "Opening browser."}
-
-        # Google Search (compat fallback)
-        if "search" in text:
-            query = text
-            for prefix in ["search google for", "search for", "google", "search"]:
-                if query.startswith(prefix):
-                    query = query[len(prefix):].strip()
-                    break
-            if query:
-                webbrowser.open(f"https://www.google.com/search?q={quote_plus(query)}")
-                return {"response": "On it."}
-            return {"response": "What should I search?"}
-
-        # System Info
-        if any(kw in text for kw in ["system info", "system status", "check system", "show system"]):
-            info = get_system_info()
-            msg = (
-                f"System: {info['platform']} {info.get('platform_version', '')}\n"
-                f"Architecture: {info['architecture']}\n"
-                f"CPU Cores: {info['cpu_cores']}\n"
-                f"Free Memory: {info.get('free_memory_gb', 'unknown')} GB\n"
-                f"Python: {info['python_version']}"
-            )
-            return {"response": msg}
-
-        # File Explorer
-        if any(kw in text for kw in ["open files", "open explorer", "open documents", "show files"]):
-            if platform.system() == "Windows":
-                subprocess.Popen("explorer", shell=True)
-            return {"response": "Opening file explorer."}
-
-        # Downloads
-        if "open downloads" in text or "show downloads" in text:
-            if platform.system() == "Windows":
-                downloads = os.path.join(os.path.expanduser("~"), "Downloads")
-                subprocess.Popen(f'explorer "{downloads}"', shell=True)
-            return {"response": "Opening downloads folder."}
-
-        # Not recognized — pass to orchestrator if available
-        if router:
-            try:
-                result = router.process_command(data.input)
-                msg = result.get("action", {}).get("message", str(result))
-                return {"response": msg}
-            except Exception as e:
-                return {"response": f"Processing error: {str(e)}"}
-
-        return {"response": f"Command not recognized: {text}"}
-
-    except Exception as e:
-        safe_log_error(f"Interaction error: {str(e)}")
-        return {"response": f"Error executing command: {str(e)}"}
+    if router:
+        try:
+            # The router handles intent detection, context, memory, and action execution
+            result = router.process_command(raw_text)
+            
+            # Extract message from action payload
+            action = result.get("action", {})
+            message = action.get("message") or "Done."
+            
+            return {"response": message}
+        except Exception as e:
+            safe_log_error(f"Router error: {str(e)}")
+            return {"response": f"I encountered an error: {str(e)}"}
+    
+    return {"response": "System core not ready."}
 
 
 # ═══════════════════════════════════════════════════

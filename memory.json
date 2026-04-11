@@ -1,5 +1,25 @@
 {
-    "history": [],
-    "last_apps": [],
+    "history": [
+        {
+            "timestamp": "2026-04-11T10:14:47.675404",
+            "command": "open vs",
+            "intent": "OPEN_APP",
+            "entities": {
+                "app_name": "vs"
+            }
+        },
+        {
+            "timestamp": "2026-04-11T10:14:55.425838",
+            "command": "open vs",
+            "intent": "OPEN_APP",
+            "entities": {
+                "app_name": "vs"
+            }
+        }
+    ],
+    "last_apps": [
+        "vs",
+        "vs"
+    ],
     "last_search_query": ""
 }

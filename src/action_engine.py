@@ -15,11 +15,49 @@ class ActionEngine:
             "TYPE_TEXT": self._type_text,
             "SYSTEM_COMMAND": self._execute_system_command,
             "OPEN_APP": self._open_any_app,
-            "SCROLL_CLICK": self._simulate_pc_control
+            "SCROLL_CLICK": self._simulate_pc_control,
+            "SYSTEM_INFO": self._system_info,
+            "OPEN_FILES": self._open_files,
+            "OPEN_DOWNLOADS": self._open_downloads
         }
 
+    def _system_info(self, entities):
+        try:
+            import psutil
+            info = {
+                "platform": platform.system(),
+                "cpu_cores": os.cpu_count(),
+                "free_memory_gb": round(psutil.virtual_memory().available / (1024**3), 2)
+            }
+        except ImportError:
+            info = {
+                "platform": platform.system(),
+                "cpu_cores": os.cpu_count(),
+                "free_memory_gb": "unknown"
+            }
+        
+        msg = f"Systems nominal. {info['free_memory_gb']} GB memory available over {info['cpu_cores']} cores."
+        return {"status": "SUCCESS", "message": msg}
+
+    def _open_files(self, entities):
+        try:
+            if platform.system() == "Windows":
+                subprocess.Popen("explorer", shell=True)
+            return {"status": "SUCCESS", "message": "Opening files."}
+        except:
+            return {"status": "FAILED", "message": "Couldn't open file explorer."}
+
+    def _open_downloads(self, entities):
+        try:
+            if platform.system() == "Windows":
+                downloads = os.path.join(os.path.expanduser("~"), "Downloads")
+                subprocess.Popen(f'explorer "{downloads}"', shell=True)
+            return {"status": "SUCCESS", "message": "Opening downloads."}
+        except:
+            return {"status": "FAILED", "message": "Couldn't open downloads."}
+
     def _resolve_app(self, name):
-        """Resolves fuzzy app names to system executables."""
+        """Resolves fuzzy app names to system executables with AI fallback."""
         known_apps = {
             "vscode": "code",
             "chrome": "chrome",
@@ -36,17 +74,38 @@ class ActionEngine:
         }
         
         # Normalize
-        name = name.lower().replace(" ", "")
+        name_clean = name.lower().replace(" ", "")
         
-        # Exact match
-        if name in known_apps:
-            return known_apps[name]
+        # 1. Exact match
+        if name_clean in known_apps:
+            return known_apps[name_clean]
         
-        # Fuzzy match (substring)
+        # 2. Fuzzy match (substring)
         for key in known_apps:
-            if name in key or key in name:
+            if name_clean in key or key in name_clean:
                 return known_apps[key]
         
+        # 3. AI Fallback (last resort)
+        from src.provider_manager import provider_manager
+        active_provider = provider_manager.get_active_provider()
+        if active_provider:
+            apps_list = ", ".join(known_apps.keys())
+            prompt = f"Given these known apps: [{apps_list}], which one does the user mean by '{name}'? Return ONLY the app name from the list or 'unknown' if no match. No JSON, just the string."
+            # We use a simple prompt here, not the structured generate_intent
+            try:
+                # Assuming provider has a simple generate method or we use generate_intent and parse it
+                # For consistency with existing code, let's use generate_intent and assume it can return a string or we extract it
+                ai_suggestion = active_provider.generate_intent(prompt)
+                if isinstance(ai_suggestion, dict):
+                    suggestion = ai_suggestion.get("app") or ai_suggestion.get("intent") or "unknown"
+                else:
+                    suggestion = str(ai_suggestion).strip().lower()
+                
+                if suggestion in known_apps:
+                    return known_apps[suggestion]
+            except:
+                pass
+
         return name
 
     def execute(self, intent_obj):
