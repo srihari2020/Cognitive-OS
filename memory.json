@@ -1,25 +1,53 @@
 {
     "history": [
         {
-            "timestamp": "2026-04-11T10:14:47.675404",
-            "command": "open vs",
+            "timestamp": "2026-04-11T10:26:45.446565",
+            "command": "open Clock",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "vs"
+                "app_name": "clock"
             }
         },
         {
-            "timestamp": "2026-04-11T10:14:55.425838",
-            "command": "open vs",
+            "timestamp": "2026-04-11T10:27:13.724287",
+            "command": "open Photos",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "vs"
+                "app_name": "photos"
+            }
+        },
+        {
+            "timestamp": "2026-04-11T10:27:38.165118",
+            "command": "open Antigravity",
+            "intent": "OPEN_APP",
+            "entities": {
+                "app_name": "antigravity"
+            }
+        },
+        {
+            "timestamp": "2026-04-11T10:27:52.248110",
+            "command": "open edge",
+            "intent": "OPEN_APP",
+            "entities": {
+                "app_name": "edge",
+                "resolved_app": "msedge"
+            }
+        },
+        {
+            "timestamp": "2026-04-11T10:28:19.774842",
+            "command": "open Microsoft store",
+            "intent": "OPEN_APP",
+            "entities": {
+                "app_name": "microsoft store"
             }
         }
     ],
     "last_apps": [
-        "vs",
-        "vs"
+        "clock",
+        "photos",
+        "antigravity",
+        "edge",
+        "microsoft store"
     ],
     "last_search_query": ""
 }

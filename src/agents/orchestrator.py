@@ -33,23 +33,28 @@ class MultiAgentOrchestrator:
         context = AgentContext(user_input=user_input)
         logger.log_input(user_input)
 
-        # 1) Intent Agent
+        # 1) Intent Agent (input -> intent)
         intent_result = self.intent_agent.run(context)
         logger.log_intent(intent_result.payload)
 
-        # 2) Safety Gate (between understanding and execution)
+        # 2) Pre-Resolution (intent -> resolve)
+        # Resolves app names and other entities before safety check
+        if hasattr(self.action_agent.engine, 'resolve'):
+            context.intent = self.action_agent.engine.resolve(context.intent)
+
+        # 3) Safety Gate (resolve -> safety)
         safety_status = self.guard.validate_intent(context.intent)
         context.safety = safety_status
         logger.log_safety(safety_status)
 
-        # 3) Memory + Prediction Agents (independent, structured outputs)
+        # 4) Memory + Prediction Agents
         memory_result = self.memory_agent.run(context)
         prediction_result = self.prediction_agent.run(context)
 
         if safety_status.get("status") != "ALLOWED":
             blocked_action = {
                 "status": "SKIPPED",
-                "message": "Safety block prevented execution.",
+                "message": safety_status.get("reason", "Safety block prevented execution."),
             }
             context.action = blocked_action
             return {
@@ -64,7 +69,7 @@ class MultiAgentOrchestrator:
                 },
             }
 
-        # 4) Action Agent
+        # 5) Action Agent (safety -> execute)
         action_result = self.action_agent.run(context)
         logger.log_action(action_result.payload)
 

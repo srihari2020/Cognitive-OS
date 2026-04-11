@@ -57,8 +57,18 @@ class ActionEngine:
             return {"status": "FAILED", "message": "Couldn't open downloads."}
 
     def _resolve_app(self, name):
-        """Resolves fuzzy app names to system executables with AI fallback."""
-        known_apps = {
+        """Resolves fuzzy app names to system executables with aliases and AI fallback."""
+        name = name.lower().strip()
+        
+        aliases = {
+            "vs": "vscode",
+            "code": "vscode",
+            "edge": "msedge",
+            "browser": "chrome",
+            "terminal": "powershell",
+        }
+        
+        apps = {
             "vscode": "code",
             "chrome": "chrome",
             "edge": "msedge",
@@ -73,55 +83,62 @@ class ActionEngine:
             "spotify": "spotify",
         }
         
-        # Normalize
-        name_clean = name.lower().replace(" ", "")
+        # 1. Alias fix
+        if name in aliases:
+            name = aliases[name]
         
-        # 1. Exact match
-        if name_clean in known_apps:
-            return known_apps[name_clean]
+        # 2. Exact match
+        if name in apps:
+            return apps[name]
         
-        # 2. Fuzzy match (substring)
-        for key in known_apps:
-            if name_clean in key or key in name_clean:
-                return known_apps[key]
+        # 3. Fuzzy match (substring)
+        for key in apps:
+            if name in key or key in name:
+                return apps[key]
         
-        # 3. AI Fallback (last resort)
+        # 4. AI Fallback (last resort)
         from src.provider_manager import provider_manager
         active_provider = provider_manager.get_active_provider()
         if active_provider:
-            apps_list = ", ".join(known_apps.keys())
+            apps_list = ", ".join(apps.keys())
             prompt = f"Given these known apps: [{apps_list}], which one does the user mean by '{name}'? Return ONLY the app name from the list or 'unknown' if no match. No JSON, just the string."
-            # We use a simple prompt here, not the structured generate_intent
             try:
-                # Assuming provider has a simple generate method or we use generate_intent and parse it
-                # For consistency with existing code, let's use generate_intent and assume it can return a string or we extract it
                 ai_suggestion = active_provider.generate_intent(prompt)
                 if isinstance(ai_suggestion, dict):
                     suggestion = ai_suggestion.get("app") or ai_suggestion.get("intent") or "unknown"
                 else:
                     suggestion = str(ai_suggestion).strip().lower()
                 
-                if suggestion in known_apps:
-                    return known_apps[suggestion]
+                if suggestion in apps:
+                    return apps[suggestion]
             except:
                 pass
 
-        return name
+        return None
+
+    def resolve(self, intent_obj):
+        """Pre-resolution step: resolves entities (like app names) without execution."""
+        intent = intent_obj.get("intent")
+        entities = intent_obj.get("entities", {})
+        
+        if intent == "OPEN_APP":
+            app_name = entities.get("app_name") or entities.get("query", "")
+            if app_name:
+                resolved_name = self._resolve_app(app_name)
+                if resolved_name:
+                    entities["resolved_app"] = resolved_name
+                    intent_obj["resolved"] = True
+        
+        return intent_obj
 
     def execute(self, intent_obj):
         intent = intent_obj.get("intent")
         entities = intent_obj.get("entities", {})
         
-        # Mapping generic requests to specific handlers
-        if intent == "UNKNOWN" and entities.get("raw_query"):
-           # Try to infer if it's an app opening or search
-           raw = entities["raw_query"].lower()
-           if "open" in raw or "launch" in raw:
-               intent = "OPEN_APP"
-               entities["app_name"] = raw.replace("open ", "").replace("launch ", "").strip()
-           elif "search" in raw:
-               intent = "GOOGLE_SEARCH"
-               entities["query"] = raw.replace("search ", "").strip()
+        # Ensure resolution has happened
+        if intent == "OPEN_APP" and "resolved_app" not in entities:
+            intent_obj = self.resolve(intent_obj)
+            entities = intent_obj.get("entities", {})
 
         action_func = self.actions.get(intent)
         if action_func:
@@ -140,16 +157,25 @@ class ActionEngine:
             return {"status": "FAILED", "message": f"Couldn't open VS Code."}
 
     def _open_any_app(self, entities):
-        app_name = entities.get("app_name") or entities.get("query", "")
+        app_name = entities.get("resolved_app") or entities.get("app_name") or entities.get("query", "")
         if not app_name:
             return {"status": "FAILED", "message": "No application specified."}
 
-        resolved_name = self._resolve_app(app_name)
+        # If not already resolved, resolve now
+        resolved_name = entities.get("resolved_app") or self._resolve_app(app_name)
+        if not resolved_name:
+            return {"status": "FAILED", "message": "I couldn't find that app."}
+
         try:
             if platform.system() == "Windows":
                 # Using 'start' to find apps in the PATH or system directories
                 subprocess.Popen(f"start {resolved_name}", shell=True)
-                return {"status": "SUCCESS", "message": f"Opening {resolved_name.capitalize()}."}
+                
+                # Format message nicely
+                display_name = resolved_name.replace("ms-settings:", "Settings").capitalize()
+                if " " in resolved_name: display_name = resolved_name # Keep multi-word names
+                
+                return {"status": "SUCCESS", "message": f"Opening {display_name}."}
             else:
                 return {"status": "FAILED", "message": "OS not supported for app launching."}
         except Exception as e:
