@@ -22,7 +22,7 @@
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "@tailwindcss/vite": "^4.2.2",
-    "animejs": "^4.3.6",
+    "animejs": "^3.2.2",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.7.0",
     "loudness": "^0.4.2",

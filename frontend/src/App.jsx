@@ -1,10 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import GojoLogo from './components/GojoLogo';
-import InputBox from './components/InputBox';
-import ResponsePanel from './components/ResponsePanel';
-import Suggestions from './components/Suggestions';
-import SettingsPanel from './components/SettingsPanel';
-import CoreOrb from './components/CoreOrb';
+import CoreOrb from './components/ui/CoreOrb';
+import CommandInput from './components/ui/CommandInput';
+import MessageCard from './components/ui/MessageCard';
+import BackgroundLayer from './components/ui/BackgroundLayer';
+import { FridayIcon } from './components/ui/Icons';
 import { commandRouter } from './services/commandRouter';
 import { contextStore } from './services/contextStore';
 import { commandService } from './services/api';
@@ -680,178 +679,87 @@ function AppContent() {
   const getAssistantState = () => {
     if (isVoiceListening) return 'listening';
     if (isProcessing) return 'processing';
-    if (isVoiceSpeaking) return 'speaking';
     return 'idle';
   };
 
   return (
-    <div
-      className={`relative flex h-screen w-screen flex-col overflow-hidden bg-[#0b0f1a] selection:bg-purple-500/30 ${
-        isElectronOverlay
-          ? 'rounded-[22px] border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.55)]'
-          : ''
-      }`}
-    >
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#05070a] text-white font-sans selection:bg-cyan-500/30">
+      <BackgroundLayer />
       <CoreOrb state={getAssistantState()} />
-      {isElectronOverlay && assistantMode === 'idle' ? (
-        renderIdleOrb()
-      ) : (
-        <div className="relative z-10 flex flex-1 flex-col overflow-hidden">
-          <div className="mx-auto flex h-full w-full max-w-[900px] min-h-0 flex-col">
-            {/* Header */}
-            <header className="flex items-center justify-between border-b border-white/5 px-6 py-4">
-              <div className="flex items-center gap-3">
-                <GojoLogo
-                  isProcessing={isProcessing}
-                  isListening={isVoiceListening}
-                  isSpeaking={isVoiceSpeaking}
-                  enableAnimation={featureFlags.enableOrbAnimation}
-                  isExpanded
-                  onActivate={() => (voiceService.isListening ? voiceService.stop() : voiceService.start(false))}
-                />
-                <div>
-                    <h1 className="font-orbitron text-lg font-black tracking-widest text-white logo-glow">
-                      COGNITIVE <span className="text-cyan-300">OS</span>
-                    </h1>
-                    <div className="flex items-center gap-2 text-[9px] font-mono text-white/30 uppercase tracking-tighter">
-                      <span className={`status-dot-pulse ${isBackendOffline ? 'bg-red-500' : 'bg-emerald-400 shadow-[0_0_8px_#00ff9f]'}`} />
-                      <span>{systemStatus.status}</span>
-                      <span>•</span>
-                      <span>FPS {fps}</span>
-                    </div>
-                  </div>
-              </div>
-            </header>
 
-            {/* Message Area */}
-            <div className="flex-1 overflow-hidden">
-              <div
-                ref={scrollRef}
-                className="chat-container h-full px-4 pb-24 pt-12"
-              >
-                <ResponsePanel responses={responses} />
-                
-                {/* Workflow Execution Preview */}
-                {activeWorkflow && (
-                  <div className="workflow-preview glass-ui rounded-2xl p-6 mb-4 border border-cyan-500/20 bg-cyan-500/5 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-cyan-400 animate-pulse">
-                           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                         </svg>
-                        <h3 className="font-rajdhani text-sm font-bold uppercase tracking-widest text-cyan-100">
-                          Autonomous Workflow
-                        </h3>
-                      </div>
-                      {workflowStatus.currentStep === -1 ? (
-                        <span className="text-[10px] font-bold text-amber-400 uppercase tracking-tighter">Awaiting Confirmation</span>
-                      ) : (
-                        <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-tighter">
-                          Executing {workflowStatus.currentStep + 1} / {activeWorkflow.steps.length}
-                        </span>
-                      )}
-                    </div>
-                    
-                    <div className="space-y-3">
-                      {activeWorkflow.steps.map((step, idx) => (
-                        <div 
-                          key={idx} 
-                          className={`flex items-center gap-3 p-2 rounded-lg transition-all duration-300 ${
-                            workflowStatus.currentStep === idx 
-                              ? 'bg-cyan-500/20 border border-cyan-500/30' 
-                              : workflowStatus.completed.includes(idx)
-                                ? 'opacity-40'
-                                : 'opacity-70'
-                          }`}
-                        >
-                          <div className={`h-2 w-2 rounded-full ${
-                            workflowStatus.currentStep === idx 
-                              ? 'bg-cyan-400 animate-ping' 
-                              : workflowStatus.completed.includes(idx)
-                                ? 'bg-emerald-400'
-                                : 'bg-white/20'
-                          }`} />
-                          <span className="text-xs font-mono text-white/80">
-                            {step.action.replace('_', ' ')}: <span className="text-cyan-300">{step.target}</span>
-                          </span>
-                          {workflowStatus.completed.includes(idx) && (
-                            <span className="ml-auto text-[10px] text-emerald-400 font-bold uppercase tracking-widest">Done</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+      {/* Main UI Layer */}
+      <main className="relative z-10 flex-1 flex flex-col items-center overflow-hidden">
+        <div className="w-full max-w-[800px] flex-1 flex flex-col overflow-hidden px-6">
+          
+          {/* Header/Title */}
+          <header className="py-8 flex flex-col items-center gap-2 opacity-40">
+            <h1 className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-400">
+              Cognitive OS
+            </h1>
+            <div className="h-[1px] w-12 bg-cyan-400/20" />
+          </header>
 
-                    {workflowStatus.currentStep === -1 && (
-                      <div className="mt-6 flex gap-3">
-                        <button 
-                          onClick={() => executeWorkflow(activeWorkflow)}
-                          className="flex-1 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/40 border border-cyan-500/30 text-cyan-100 text-xs font-bold uppercase tracking-widest transition-all"
-                        >
-                          Execute Plan
-                        </button>
-                        <button 
-                          onClick={() => setActiveWorkflow(null)}
-                          className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 text-xs font-bold uppercase tracking-widest transition-all"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-
-                    {workflowStatus.error && (
-                      <div className="mt-4 p-2 rounded bg-red-500/10 border border-red-500/20 text-[10px] text-red-400 font-mono">
-                        ERROR: {workflowStatus.error}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {isProcessing && (
-                  <div className="message mr-auto mb-3 max-w-[85%] flex items-center gap-3">
-                    <div className="loading">
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Input Area (Sticky Bottom) */}
-            <div className="sticky bottom-0 z-20 bg-[#0a0f19]/90 backdrop-blur-md p-4 border-t border-white/10">
-              <div className="mx-auto max-w-[900px] flex flex-col gap-3">
-                {featureFlags.enableSuggestions && !isProcessing && (
-                  <Suggestions onSelect={setDraft} isSafeMode={PARTIAL_SAFE_MODE} extraSuggestions={followUpSuggestions} />
-                )}
-                <div className="relative">
-                  <InputBox
-                    value={draft}
-                    onChange={setDraft}
-                    onSend={handleSendCommand}
-                    isProcessing={isProcessing}
-                    isListening={isVoiceListening}
-                  />
+          {/* Chat Area */}
+          <div 
+            ref={scrollRef} 
+            className="flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-4 custom-scrollbar scroll-smooth"
+          >
+            {responses.map((res, idx) => (
+              <MessageCard 
+                key={idx}
+                role={res.role}
+                content={res.text}
+                provider={res.provider}
+              />
+            ))}
+            
+            {isProcessing && (
+              <div className="flex items-center gap-3 px-4 py-2 opacity-40">
+                <div className="loading">
+                  <span />
+                  <span />
+                  <span />
                 </div>
               </div>
+            )}
+          </div>
+
+          {/* Workflow Preview (If active) */}
+          {activeWorkflow && (
+            <div className="mb-4 p-6 rounded-2xl border border-cyan-500/20 bg-cyan-500/5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <FridayIcon className="text-cyan-400 animate-pulse" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-cyan-100">
+                    Executing Workflow
+                  </h3>
+                </div>
+              </div>
+              {/* Simplified workflow steps */}
+              <div className="space-y-2">
+                {activeWorkflow.steps.map((step, idx) => (
+                  <div key={idx} className={`text-xs font-mono ${workflowStatus.completed.includes(idx) ? 'text-emerald-400 opacity-50' : 'text-white/60'}`}>
+                    {idx === workflowStatus.currentStep ? '> ' : '  '}
+                    {step.action}: {step.target}
+                  </div>
+                ))}
+              </div>
             </div>
+          )}
+
+          {/* Input Area */}
+          <div className="pb-8 pt-4">
+            <CommandInput
+              value={draft}
+              onChange={setDraft}
+              onSend={handleSendCommand}
+              isProcessing={isProcessing}
+              isListening={isVoiceListening}
+              isSpeaking={isVoiceSpeaking}
+            />
           </div>
         </div>
-      )}
-
-      {isElectronOverlay && (
-        <button
-          type="button"
-          onClick={() => window.electronAssistant.toggle()}
-          className={`absolute top-3 right-3 z-50 h-3 w-3 rounded-full transition-colors ${
-            assistantMode === 'idle' ? 'bg-white/30 hover:bg-white/50' : 'bg-red-400/70 hover:bg-red-300'
-          }`}
-          aria-label="Hide assistant"
-          title="Hide assistant"
-        />
-      )}
-
-      {isSettingsOpen && <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />}
+      </main>
     </div>
   );
 }

@@ -1,26 +1,6 @@
 {
     "history": [
         {
-            "timestamp": "2026-04-11T12:31:21.901200",
-            "command": "open vs",
-            "intent": "OPEN_APP",
-            "entities": {
-                "app_name": "vs",
-                "resolved_app_target": "code",
-                "resolved_app_display": "Vscode"
-            }
-        },
-        {
-            "timestamp": "2026-04-11T13:59:49.629773",
-            "command": "open vs",
-            "intent": "OPEN_APP",
-            "entities": {
-                "app_name": "vs",
-                "resolved_app_target": "code",
-                "resolved_app_display": "Vscode"
-            }
-        },
-        {
             "timestamp": "2026-04-11T14:00:05.449711",
             "command": "open openai",
             "intent": "OPEN_APP",
@@ -49,20 +29,41 @@
                 "resolved_app_target": "ms-settings:",
                 "resolved_app_display": "Settings"
             }
+        },
+        {
+            "timestamp": "2026-04-11T14:17:27.599894",
+            "command": "open vs",
+            "intent": "OPEN_APP",
+            "entities": {
+                "app_name": "vs",
+                "resolved_app_target": "code",
+                "resolved_app_display": "Vscode"
+            }
+        },
+        {
+            "timestamp": "2026-04-11T14:17:48.263601",
+            "command": "open youtube",
+            "intent": "OPEN_APP",
+            "entities": {
+                "app_name": "youtube",
+                "resolved_app_target": "C:\\Users\\sriha\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\https--www.youtube.com-live-IhNJjkwrpTcsi=8b_MgA0Jg50BqcWo.lnk",
+                "resolved_app_display": "https--www.youtube.com-live-IhNJjkwrpTcsi=8b_MgA0Jg50BqcWo"
+            }
         }
     ],
     "last_apps": [
-        "Vscode",
-        "Vscode",
         "ai",
         "Spotify",
-        "Settings"
+        "Settings",
+        "Vscode",
+        "https--www.youtube.com-live-IhNJjkwrpTcsi=8b_MgA0Jg50BqcWo"
     ],
     "last_search_query": "",
     "frequency": {
-        "vscode": 2,
+        "vscode": 3,
         "ai": 1,
         "spotify": 1,
-        "settings": 1
+        "settings": 1,
+        "https--www.youtube.com-live-ihnjjkwrptcsi=8b_mga0jg50bqcwo": 1
     }
 }

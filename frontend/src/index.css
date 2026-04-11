@@ -199,48 +199,15 @@
    ═══════════════════════════════════════════════════ */
 
 /* ─── Core Orb ─── */
-.core-orb { 
-  width: 60px; 
-  height: 60px; 
-  border-radius: 50%; 
-  background: radial-gradient(circle at 35% 35%, #00f0ff, #001a2e); 
-  box-shadow: 0 0 20px #00f0ff, 0 0 60px rgba(0,255,255,0.4); 
-  animation: pulse 2s infinite ease-in-out; 
-  position: relative;
-  border: 1px solid rgba(0, 240, 255, 0.3);
-} 
-
-.core-orb::after {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 240, 255, 0.1);
-  animation: pulse 3s infinite reverse ease-in-out;
-}
-
-@keyframes pulse { 
-  0% { transform: scale(1); opacity: 0.8; } 
-  50% { transform: scale(1.08); opacity: 1; } 
-  100% { transform: scale(1); opacity: 0.8; } 
-} 
+/* Removed CSS-based core-orb pulse in favor of anime.js */
 
 /* ─── HUD Ring ─── */
 .hud-ring {
-  animation: friday-spin 8s linear infinite;
   transform-origin: center;
 }
 
 /* ─── Mic Button Glow ─── */
-.mic-active { 
-  animation: glow 1s infinite alternate ease-in-out; 
-  background: radial-gradient(circle at 35% 35%, #00f0ff, #003a4e) !important;
-} 
-
-@keyframes glow { 
-  from { box-shadow: 0 0 15px #00f0ff, 0 0 30px rgba(0, 240, 255, 0.2); } 
-  to { box-shadow: 0 0 35px #00f0ff, 0 0 70px rgba(0, 240, 255, 0.5); } 
-} 
+/* Removed CSS-based mic-active glow in favor of anime.js */
 
 /* ─── Command Box (Glass Effect) ─── */
 .command-box { 
