@@ -195,58 +195,123 @@
 }
 
 /* ═══════════════════════════════════════════════════
-   KEYFRAMES — FRIDAY Animations (CSS only, no loops when idle)
+   FRIDAY FUTURISTIC UI SYSTEM (LIGHTWEIGHT)
    ═══════════════════════════════════════════════════ */
 
-/* Fade in — used on mount */
-@keyframes friday-fade-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+/* ─── Core Orb ─── */
+.core-orb { 
+  width: 60px; 
+  height: 60px; 
+  border-radius: 50%; 
+  background: radial-gradient(circle at 35% 35%, #00f0ff, #001a2e); 
+  box-shadow: 0 0 20px #00f0ff, 0 0 60px rgba(0,255,255,0.4); 
+  animation: pulse 2s infinite ease-in-out; 
+  position: relative;
+  border: 1px solid rgba(0, 240, 255, 0.3);
+} 
+
+.core-orb::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 240, 255, 0.1);
+  animation: pulse 3s infinite reverse ease-in-out;
 }
 
-/* Message slide-in */
+@keyframes pulse { 
+  0% { transform: scale(1); opacity: 0.8; } 
+  50% { transform: scale(1.08); opacity: 1; } 
+  100% { transform: scale(1); opacity: 0.8; } 
+} 
+
+/* ─── HUD Ring ─── */
+.hud-ring {
+  animation: friday-spin 8s linear infinite;
+  transform-origin: center;
+}
+
+/* ─── Mic Button Glow ─── */
+.mic-active { 
+  animation: glow 1s infinite alternate ease-in-out; 
+  background: radial-gradient(circle at 35% 35%, #00f0ff, #003a4e) !important;
+} 
+
+@keyframes glow { 
+  from { box-shadow: 0 0 15px #00f0ff, 0 0 30px rgba(0, 240, 255, 0.2); } 
+  to { box-shadow: 0 0 35px #00f0ff, 0 0 70px rgba(0, 240, 255, 0.5); } 
+} 
+
+/* ─── Command Box (Glass Effect) ─── */
+.command-box { 
+  backdrop-filter: blur(12px); 
+  -webkit-backdrop-filter: blur(12px);
+  background: rgba(0, 20, 40, 0.6); 
+  border: 1px solid rgba(0,255,255,0.2); 
+  border-radius: 12px; 
+  transition: all 0.2s ease; 
+} 
+
+.command-box:focus-within { 
+  border-color: #00f0ff; 
+  box-shadow: 0 0 20px rgba(0,255,255,0.2), inset 0 0 10px rgba(0,255,255,0.05); 
+} 
+
+/* ─── Message Cards ─── */
+.message { 
+  background: rgba(255,255,255,0.03); 
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px; 
+  padding: 12px 16px; 
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: message-slide-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+} 
+
+.message:hover { 
+  transform: translateY(-2px); 
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(0, 240, 255, 0.15);
+} 
+
+/* ─── Loading Dots ─── */
+.loading { 
+  display: flex; 
+  gap: 6px; 
+  align-items: center;
+  padding: 4px 8px;
+} 
+
+.loading span { 
+  width: 6px; 
+  height: 6px; 
+  background: #00f0ff; 
+  border-radius: 50%; 
+  animation: bounce 1s infinite ease-in-out; 
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.5);
+} 
+
+.loading span:nth-child(2) { animation-delay: 0.2s; } 
+.loading span:nth-child(3) { animation-delay: 0.4s; } 
+
+@keyframes bounce { 
+  0%, 100% { transform: translateY(0); opacity: 0.4; } 
+  50% { transform: translateY(-8px); opacity: 1; } 
+} 
+
+/* ─── Chat Container ─── */
+.chat-container { 
+  scroll-behavior: smooth; 
+  overflow-y: auto;
+  overflow-x: hidden;
+} 
+
 @keyframes message-slide-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateX(-10px) translateY(10px); }
+  to { opacity: 1; transform: translateX(0) translateY(0); }
 }
 
-/* Dot pulse — status indicator */
-@keyframes friday-dot-pulse {
-  0%, 100% { opacity: 0.4; transform: scale(0.9); }
-  50% { opacity: 1; transform: scale(1.1); }
-}
-
-/* Breathe — orb processing, speaking */
-@keyframes friday-breathe {
-  0%, 100% { box-shadow: 0 0 12px rgba(0, 234, 255, 0.1); }
-  50% { box-shadow: 0 0 28px rgba(0, 234, 255, 0.22); }
-}
-
-/* Spin — processing ring, loader */
 @keyframes friday-spin {
   to { transform: rotate(360deg); }
-}
-
-/* Mic pulse ring */
-@keyframes mic-pulse-ring-anim {
-  0% { transform: scale(1); opacity: 0.5; }
-  70% { transform: scale(1.25); opacity: 0; }
-  100% { transform: scale(1.25); opacity: 0; }
-}
-
-.mic-pulse-ring {
-  animation: mic-pulse-ring-anim 1.5s ease-out infinite;
-}
-
-/* Mic spinner */
-.mic-spinner {
-  animation: friday-spin 1s linear infinite;
-}
-
-/* Cursor blink — typewriter */
-@keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
 }
 
 /* Loading dots */

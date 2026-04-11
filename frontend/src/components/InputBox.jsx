@@ -163,9 +163,9 @@ const InputBox = memo(({
 
       <form
         onSubmit={handleSubmit}
-        className={`friday-input relative flex items-center gap-3 rounded-2xl border px-4 py-3 transition-all duration-300 ${
+        className={`command-box relative flex items-center gap-3 px-4 py-3 transition-all duration-300 ${
           isFocused || isListening
-            ? 'border-cyan-400/50 bg-white/[0.08] shadow-[0_0_20px_rgba(0,234,255,0.12)]'
+            ? 'border-cyan-400/50 bg-white/[0.08]'
             : 'border-white/[0.08] bg-white/[0.04]'
         }`}
       >
@@ -174,7 +174,7 @@ const InputBox = memo(({
           onClick={handleMicClick}
           className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all duration-300 ${
             isListening 
-              ? 'bg-cyan-400 text-black shadow-[0_0_15px_rgba(34,211,238,0.5)] scale-110' 
+              ? 'mic-active text-black scale-110' 
               : isSpeaking
                 ? 'bg-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.5)]'
                 : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white'

@@ -1,62 +1,68 @@
 {
     "history": [
         {
-            "timestamp": "2026-04-11T12:16:57.071781",
-            "command": "open todo",
+            "timestamp": "2026-04-11T12:31:21.901200",
+            "command": "open vs",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "todo",
-                "resolved_app_target": "microsoft-to-do:",
-                "resolved_app_display": "Microsofttodo"
+                "app_name": "vs",
+                "resolved_app_target": "code",
+                "resolved_app_display": "Vscode"
             }
         },
         {
-            "timestamp": "2026-04-11T12:17:17.479682",
-            "command": "open paint",
+            "timestamp": "2026-04-11T13:59:49.629773",
+            "command": "open vs",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "paint",
-                "resolved_app_target": "C:\\Program Files\\WindowsApps\\Microsoft.Paint_11.2601.401.0_x64__8wekyb3d8bbwe\\PaintApp\\mspaint.exe",
-                "resolved_app_display": "mspaint"
+                "app_name": "vs",
+                "resolved_app_target": "code",
+                "resolved_app_display": "Vscode"
             }
         },
         {
-            "timestamp": "2026-04-11T12:17:30.726383",
-            "command": "open copilet",
+            "timestamp": "2026-04-11T14:00:05.449711",
+            "command": "open openai",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "copilet",
-                "resolved_app_target": "microsoft-edge-copilot:",
-                "resolved_app_display": "Copilot"
+                "app_name": "ai",
+                "resolved_app_target": "C:\\Program Files\\Microsoft Office\\root\\vfs\\ProgramFilesCommonX64\\Microsoft Shared\\OFFICE16\\AI\\ai.exe",
+                "resolved_app_display": "ai"
             }
         },
         {
-            "timestamp": "2026-04-11T12:17:55.396109",
-            "command": "open word",
+            "timestamp": "2026-04-11T14:00:31.260154",
+            "command": "open Spotify",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "word",
-                "resolved_app_target": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Word.lnk",
-                "resolved_app_display": "Word"
+                "app_name": "spotify",
+                "resolved_app_target": "C:\\Program Files\\WindowsApps\\SpotifyAB.SpotifyMusic_1.286.502.0_x64__zpdnekdrzrea0\\Spotify.exe",
+                "resolved_app_display": "Spotify"
             }
         },
         {
-            "timestamp": "2026-04-11T12:18:07.534322",
-            "command": "open hydra",
+            "timestamp": "2026-04-11T14:00:52.867082",
+            "command": "open Settings",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "hydra",
-                "resolved_app_target": "C:\\Users\\sriha\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Hydra.lnk",
-                "resolved_app_display": "Hydra"
+                "app_name": "settings",
+                "resolved_app_target": "ms-settings:",
+                "resolved_app_display": "Settings"
             }
         }
     ],
     "last_apps": [
-        "todo",
-        "paint",
-        "copilet",
-        "word",
-        "hydra"
+        "Vscode",
+        "Vscode",
+        "ai",
+        "Spotify",
+        "Settings"
     ],
-    "last_search_query": ""
+    "last_search_query": "",
+    "frequency": {
+        "vscode": 2,
+        "ai": 1,
+        "spotify": 1,
+        "settings": 1
+    }
 }

@@ -4,6 +4,7 @@ import InputBox from './components/InputBox';
 import ResponsePanel from './components/ResponsePanel';
 import Suggestions from './components/Suggestions';
 import SettingsPanel from './components/SettingsPanel';
+import CoreOrb from './components/CoreOrb';
 import { commandRouter } from './services/commandRouter';
 import { contextStore } from './services/contextStore';
 import { commandService } from './services/api';
@@ -676,6 +677,13 @@ function AppContent() {
     );
   }
 
+  const getAssistantState = () => {
+    if (isVoiceListening) return 'listening';
+    if (isProcessing) return 'processing';
+    if (isVoiceSpeaking) return 'speaking';
+    return 'idle';
+  };
+
   return (
     <div
       className={`relative flex h-screen w-screen flex-col overflow-hidden bg-[#0b0f1a] selection:bg-purple-500/30 ${
@@ -684,6 +692,7 @@ function AppContent() {
           : ''
       }`}
     >
+      <CoreOrb state={getAssistantState()} />
       {isElectronOverlay && assistantMode === 'idle' ? (
         renderIdleOrb()
       ) : (
@@ -715,90 +724,98 @@ function AppContent() {
             </header>
 
             {/* Message Area */}
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar scroll-smooth">
-              <ResponsePanel responses={responses} />
-              
-              {/* Workflow Execution Preview */}
-              {activeWorkflow && (
-                <div className="workflow-preview glass-ui rounded-2xl p-6 mb-4 border border-cyan-500/20 bg-cyan-500/5 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-cyan-400 animate-pulse">
-                         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                       </svg>
-                      <h3 className="font-rajdhani text-sm font-bold uppercase tracking-widest text-cyan-100">
-                        Autonomous Workflow
-                      </h3>
+            <div className="flex-1 overflow-hidden">
+              <div
+                ref={scrollRef}
+                className="chat-container h-full px-4 pb-24 pt-12"
+              >
+                <ResponsePanel responses={responses} />
+                
+                {/* Workflow Execution Preview */}
+                {activeWorkflow && (
+                  <div className="workflow-preview glass-ui rounded-2xl p-6 mb-4 border border-cyan-500/20 bg-cyan-500/5 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-cyan-400 animate-pulse">
+                           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                         </svg>
+                        <h3 className="font-rajdhani text-sm font-bold uppercase tracking-widest text-cyan-100">
+                          Autonomous Workflow
+                        </h3>
+                      </div>
+                      {workflowStatus.currentStep === -1 ? (
+                        <span className="text-[10px] font-bold text-amber-400 uppercase tracking-tighter">Awaiting Confirmation</span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-tighter">
+                          Executing {workflowStatus.currentStep + 1} / {activeWorkflow.steps.length}
+                        </span>
+                      )}
                     </div>
-                    {workflowStatus.currentStep === -1 ? (
-                      <span className="text-[10px] font-bold text-amber-400 uppercase tracking-tighter">Awaiting Confirmation</span>
-                    ) : (
-                      <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-tighter">
-                        Executing {workflowStatus.currentStep + 1} / {activeWorkflow.steps.length}
-                      </span>
+                    
+                    <div className="space-y-3">
+                      {activeWorkflow.steps.map((step, idx) => (
+                        <div 
+                          key={idx} 
+                          className={`flex items-center gap-3 p-2 rounded-lg transition-all duration-300 ${
+                            workflowStatus.currentStep === idx 
+                              ? 'bg-cyan-500/20 border border-cyan-500/30' 
+                              : workflowStatus.completed.includes(idx)
+                                ? 'opacity-40'
+                                : 'opacity-70'
+                          }`}
+                        >
+                          <div className={`h-2 w-2 rounded-full ${
+                            workflowStatus.currentStep === idx 
+                              ? 'bg-cyan-400 animate-ping' 
+                              : workflowStatus.completed.includes(idx)
+                                ? 'bg-emerald-400'
+                                : 'bg-white/20'
+                          }`} />
+                          <span className="text-xs font-mono text-white/80">
+                            {step.action.replace('_', ' ')}: <span className="text-cyan-300">{step.target}</span>
+                          </span>
+                          {workflowStatus.completed.includes(idx) && (
+                            <span className="ml-auto text-[10px] text-emerald-400 font-bold uppercase tracking-widest">Done</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {workflowStatus.currentStep === -1 && (
+                      <div className="mt-6 flex gap-3">
+                        <button 
+                          onClick={() => executeWorkflow(activeWorkflow)}
+                          className="flex-1 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/40 border border-cyan-500/30 text-cyan-100 text-xs font-bold uppercase tracking-widest transition-all"
+                        >
+                          Execute Plan
+                        </button>
+                        <button 
+                          onClick={() => setActiveWorkflow(null)}
+                          className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 text-xs font-bold uppercase tracking-widest transition-all"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+
+                    {workflowStatus.error && (
+                      <div className="mt-4 p-2 rounded bg-red-500/10 border border-red-500/20 text-[10px] text-red-400 font-mono">
+                        ERROR: {workflowStatus.error}
+                      </div>
                     )}
                   </div>
-                  
-                  <div className="space-y-3">
-                    {activeWorkflow.steps.map((step, idx) => (
-                      <div 
-                        key={idx} 
-                        className={`flex items-center gap-3 p-2 rounded-lg transition-all duration-300 ${
-                          workflowStatus.currentStep === idx 
-                            ? 'bg-cyan-500/20 border border-cyan-500/30' 
-                            : workflowStatus.completed.includes(idx)
-                              ? 'opacity-40'
-                              : 'opacity-70'
-                        }`}
-                      >
-                        <div className={`h-2 w-2 rounded-full ${
-                          workflowStatus.currentStep === idx 
-                            ? 'bg-cyan-400 animate-ping' 
-                            : workflowStatus.completed.includes(idx)
-                              ? 'bg-emerald-400'
-                              : 'bg-white/20'
-                        }`} />
-                        <span className="text-xs font-mono text-white/80">
-                          {step.action.replace('_', ' ')}: <span className="text-cyan-300">{step.target}</span>
-                        </span>
-                        {workflowStatus.completed.includes(idx) && (
-                          <span className="ml-auto text-[10px] text-emerald-400 font-bold uppercase tracking-widest">Done</span>
-                        )}
-                      </div>
-                    ))}
+                )}
+
+                {isProcessing && (
+                  <div className="message mr-auto mb-3 max-w-[85%] flex items-center gap-3">
+                    <div className="loading">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
                   </div>
-
-                  {workflowStatus.currentStep === -1 && (
-                    <div className="mt-6 flex gap-3">
-                      <button 
-                        onClick={() => executeWorkflow(activeWorkflow)}
-                        className="flex-1 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/40 border border-cyan-500/30 text-cyan-100 text-xs font-bold uppercase tracking-widest transition-all"
-                      >
-                        Execute Plan
-                      </button>
-                      <button 
-                        onClick={() => setActiveWorkflow(null)}
-                        className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 text-xs font-bold uppercase tracking-widest transition-all"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-
-                  {workflowStatus.error && (
-                    <div className="mt-4 p-2 rounded bg-red-500/10 border border-red-500/20 text-[10px] text-red-400 font-mono">
-                      ERROR: {workflowStatus.error}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {isProcessing && (
-                <div className="flex items-center justify-center gap-2 py-6">
-                  <div className="loader" />
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-400/60 loading-dots">{currentLoadingMessage}</span>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* Input Area (Sticky Bottom) */}

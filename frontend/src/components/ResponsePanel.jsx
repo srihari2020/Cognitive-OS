@@ -121,12 +121,11 @@ const ResponseCard = memo(({ response, isLatest }) => {
 
   return (
     <div
-      className={`message-entry relative overflow-hidden transition-all duration-300 rounded-2xl p-4 mb-3 flex flex-col border ${tone.cardClass} ${
-        role === 'user' ? 'ml-auto' : 'mr-auto'
+      className={`message relative overflow-hidden transition-all duration-300 rounded-2xl p-4 mb-3 flex flex-col ${tone.cardClass} ${
+        role === 'user' ? 'ml-auto border-white/10' : 'mr-auto'
       }`}
       style={{
         maxWidth: role === 'user' ? '75%' : '85%',
-        animation: 'message-slide-in 0.3s ease-out forwards',
       }}
     >
       <div className="flex items-start gap-3">
