@@ -114,8 +114,22 @@ class VoiceService {
     this.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.9; // Slower rate
-    utterance.pitch = 0.9; // Slightly lower pitch
+    
+    // Select a female voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const femaleVoice = voices.find(v => 
+      v.name.toLowerCase().includes("female") || 
+      v.name.includes("Google UK English Female") || 
+      v.name.includes("Microsoft Zira") ||
+      v.name.includes("Samantha")
+    );
+
+    if (femaleVoice) {
+      utterance.voice = femaleVoice;
+    }
+
+    utterance.rate = 1.0; // Natural rate
+    utterance.pitch = 1.1; // Slightly higher for FRIDAY style
     utterance.volume = 1.0;
 
     utterance.onstart = () => {

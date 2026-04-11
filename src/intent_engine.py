@@ -22,17 +22,36 @@ class IntentEngine:
         }
 
     def detect_intent_simple(self, text):
-        """FRIDAY-style simple intent detection."""
-        text = text.lower()
+        """FRIDAY-style simple intent detection with smart aliases."""
+        text = text.lower().strip()
+        
+        # Smart Intent Aliases
+        intents_map = {
+            "play music": "spotify",
+            "music": "spotify",
+            "code something": "vscode",
+            "code": "vscode",
+            "browse internet": "chrome",
+            "browse": "chrome",
+            "internet": "chrome",
+            "search": "google search",
+            "calculate": "calculator",
+            "write": "notepad",
+            "notes": "notepad",
+        }
+        
+        if text in intents_map:
+            return "OPEN_APP", intents_map[text]
+
         if any(re.fullmatch(p, text) for p in self.context_patterns["OPEN_IT"]):
-            return "OPEN_IT"
+            return "OPEN_IT", None
         if any(re.fullmatch(p, text) for p in self.context_patterns["SEARCH_MORE"]):
-            return "SEARCH_MORE"
+            return "SEARCH_MORE", None
         if "open" in text or "launch" in text or "run" in text:
-            return "OPEN_APP"
+            return "OPEN_APP", self.extract_target(text)
         if "search" in text or "google" in text or "look up" in text:
-            return "GOOGLE_SEARCH"
-        return "UNKNOWN"
+            return "GOOGLE_SEARCH", self.extract_target(text)
+        return "UNKNOWN", None
 
     def extract_target(self, text):
         """Extracts the core target from the command."""
@@ -48,8 +67,8 @@ class IntentEngine:
         """
         user_input_lower = user_input.lower().strip()
 
-        # 1) Handle context follow-ups first (FRIDAY style)
-        intent = self.detect_intent_simple(user_input_lower)
+        # 1) Handle context follow-ups and smart intents first
+        intent, target = self.detect_intent_simple(user_input_lower)
         
         if intent == "OPEN_IT":
             last_app = memory_manager.get_last_app()
@@ -70,7 +89,6 @@ class IntentEngine:
                     "raw_input": user_input
                 }
         elif intent == "OPEN_APP":
-            target = self.extract_target(user_input_lower)
             return {
                 "intent": "OPEN_APP",
                 "entities": {"app_name": target},
@@ -78,7 +96,6 @@ class IntentEngine:
                 "raw_input": user_input
             }
         elif intent == "GOOGLE_SEARCH":
-            target = self.extract_target(user_input_lower)
             return {
                 "intent": "GOOGLE_SEARCH",
                 "entities": {"query": target},

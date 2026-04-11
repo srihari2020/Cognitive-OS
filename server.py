@@ -138,6 +138,9 @@ class CommandRequest(BaseModel):
 class InteractionInput(BaseModel):
     input: str
 
+class SuggestionRequest(BaseModel):
+    query: str
+
 class InteractionEvent(BaseModel):
     event_type: str
     x: float = 0
@@ -243,10 +246,10 @@ async def handle_interaction(data: InteractionInput):
     """
     raw_text = (data.input or "").strip()
     if not raw_text:
-        return {"response": "On it."}
+        return {"response": "I'm listening.", "speak": True}
 
     if is_dangerous_input(raw_text):
-        return {"response": "Blocked for safety."}
+        return {"response": "I'm sorry, I can't do that for security reasons.", "speak": True}
 
     safe_log("API", f"Processing interaction: {raw_text}")
 
@@ -255,16 +258,22 @@ async def handle_interaction(data: InteractionInput):
             # The router handles intent detection, context, memory, and action execution
             result = router.process_command(raw_text)
             
-            # Extract message from action payload
+            # Extract message and speak flag from action payload
             action = result.get("action", {})
             message = action.get("message") or "Done."
+            speak = action.get("speak", False)
             
-            return {"response": message}
+            # If it was an unknown intent, give a more natural response
+            if result.get("intent") == "UNKNOWN" and message == "I couldn't find that command.":
+                message = "I'm sorry, I didn't quite catch that. Could you rephrase?"
+                speak = True
+            
+            return {"response": message, "speak": speak}
         except Exception as e:
             safe_log_error(f"Router error: {str(e)}")
-            return {"response": f"I encountered an error: {str(e)}"}
+            return {"response": "I encountered a minor system error. One moment.", "speak": True}
     
-    return {"response": "System core not ready."}
+    return {"response": "My core systems are still initializing.", "speak": True}
 
 
 # ═══════════════════════════════════════════════════
@@ -323,6 +332,18 @@ async def get_anticipation():
         "attention_level": attention_level
     }
 
+
+@app.post("/api/suggest")
+async def get_live_suggestions(request: SuggestionRequest):
+    """Live app suggestions for the search box."""
+    try:
+        if suggestion_engine:
+            suggestions = suggestion_engine.suggest_apps(request.query)
+            return suggestions
+        return []
+    except Exception as e:
+        safe_log_error(f"Live Suggestion Error: {str(e)}")
+        return []
 
 @app.get("/api/suggestions")
 async def get_suggestions():

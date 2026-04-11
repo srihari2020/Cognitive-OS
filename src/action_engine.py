@@ -129,9 +129,9 @@ class ActionEngine:
                 subprocess.Popen(f'start "" "{target}"', shell=True)
             else:
                 subprocess.Popen(["code"], shell=True)
-            return {"status": "SUCCESS", "message": "Opening Visual Studio Code."}
+            return {"status": "SUCCESS", "message": "Opening Visual Studio Code for you.", "speak": True}
         except Exception as e:
-            return {"status": "FAILED", "message": "Couldn't open Visual Studio Code."}
+            return {"status": "FAILED", "message": "I'm sorry, I couldn't open Visual Studio Code.", "speak": True}
 
     def _open_any_app(self, entities):
         target = entities.get("resolved_app_target")
@@ -141,11 +141,11 @@ class ActionEngine:
             # Fallback if not already resolved
             app_name = entities.get("app_name") or entities.get("query", "")
             if not app_name:
-                return {"status": "FAILED", "message": "No application specified."}
+                return {"status": "FAILED", "message": "I'm not sure which application you mean.", "speak": True}
             target, display_name = self._resolve_app(app_name)
 
         if not target:
-            return {"status": "FAILED", "message": "I couldn't find that app."}
+            return {"status": "FAILED", "message": "I couldn't find that app on your system.", "speak": True}
 
         try:
             if platform.system() == "Windows":
@@ -157,12 +157,12 @@ class ActionEngine:
                     # File path (.exe or .lnk)
                     subprocess.Popen(f'start "" "{target}"', shell=True)
                 
-                return {"status": "SUCCESS", "message": f"Opening {display_name}."}
+                return {"status": "SUCCESS", "message": f"Opening {display_name} for you.", "speak": True}
             else:
-                return {"status": "FAILED", "message": "OS not supported for app launching."}
+                return {"status": "FAILED", "message": "I can only launch applications on Windows systems for now.", "speak": True}
         except Exception as e:
             logger.log_error(f"Execution error for {target}: {e}")
-            return {"status": "FAILED", "message": f"I couldn't find that app."}
+            return {"status": "FAILED", "message": "I encountered an error while trying to open that app.", "speak": True}
 
     def _google_search(self, entities):
         query = entities.get("query", "")

@@ -11,18 +11,20 @@ class MemoryManager:
     def _load_memory(self):
         """Loads memory from file or returns defaults."""
         if not os.path.exists(self.memory_file):
-            return {"history": [], "last_apps": [], "last_search_query": ""}
+            return {"history": [], "last_apps": [], "last_search_query": "", "frequency": {}}
         
         try:
             with open(self.memory_file, 'r') as f:
                 data = json.load(f)
-                # Handle migration from list to dict if needed
+                # Handle migration
                 if isinstance(data, list):
-                    return {"history": data[-self.max_history:], "last_apps": [], "last_search_query": ""}
+                    return {"history": data[-self.max_history:], "last_apps": [], "last_search_query": "", "frequency": {}}
+                if "frequency" not in data:
+                    data["frequency"] = {}
                 return data
         except (json.JSONDecodeError, IOError) as e:
             logger.log_error(f"Failed to load memory: {e}")
-            return {"history": [], "last_apps": [], "last_search_query": ""}
+            return {"history": [], "last_apps": [], "last_search_query": "", "frequency": {}}
 
     def _save_memory(self, data):
         """Saves memory data to file."""
@@ -47,17 +49,23 @@ class MemoryManager:
         memory['history'].append(interaction)
         memory['history'] = memory['history'][-self.max_history:]
         
-        # Update last apps
+        # Update last apps and frequency
         intent = intent_obj.get('intent')
         entities = intent_obj.get('entities', {})
+        app_name = None
+        
         if intent == "OPEN_APP":
-            app_name = entities.get('app_name')
-            if app_name:
-                memory['last_apps'].append(app_name)
-                memory['last_apps'] = memory['last_apps'][-5:]
+            app_name = entities.get('resolved_app_display') or entities.get('app_name')
         elif intent == "OPEN_CODE":
-            memory['last_apps'].append("vscode")
+            app_name = "Visual Studio Code"
+        
+        if app_name:
+            memory['last_apps'].append(app_name)
             memory['last_apps'] = memory['last_apps'][-5:]
+            
+            # Update frequency
+            app_key = app_name.lower()
+            memory['frequency'][app_key] = memory['frequency'].get(app_key, 0) + 1
         
         # Update last search
         if intent == "GOOGLE_SEARCH":
@@ -67,6 +75,10 @@ class MemoryManager:
 
         self._save_memory(memory)
         logger.log_event("MEMORY_SAVE", f"Updated memory for: {command}")
+
+    def get_frequency(self):
+        """Returns the frequency map."""
+        return self._load_memory().get('frequency', {})
 
     def get_history(self):
         """Retrieves history."""

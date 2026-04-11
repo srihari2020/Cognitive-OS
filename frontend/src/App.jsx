@@ -422,7 +422,8 @@ function AppContent() {
       try {
         const result = await commandService.send(prompt);
         return {
-          text: result?.action?.message || 'Processing complete.',
+          text: result?.response || 'Done.',
+          speak: result?.speak || false,
           provider: 'backend',
           role: 'assistant',
         };
@@ -439,6 +440,7 @@ function AppContent() {
     });
     return {
       text: aiResponse.text,
+      speak: true, // AI responses are usually spoken
       provider: aiResponse.provider,
       role: aiResponse.status === 'ERROR' ? 'system' : 'assistant',
     };
@@ -561,7 +563,9 @@ function AppContent() {
         }
       } else {
         pushResponse(createEntry(`${prefix}: ${result.text}`, result.role));
-        speakResponse(result.text);
+        if (result.speak) {
+          speakResponse(result.text);
+        }
       }
 
       setSystemStatus((current) => ({ ...current, status: result.provider === 'backend' ? 'ONLINE' : `${result.provider.toUpperCase()} LINK` }));
@@ -665,6 +669,7 @@ function AppContent() {
             onSend={handleSendCommand}
             isProcessing={isProcessing}
             isListening={isVoiceListening}
+            isSpeaking={isVoiceSpeaking}
           />
         </div>
       </div>
