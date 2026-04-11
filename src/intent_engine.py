@@ -1,6 +1,8 @@
 import re
 from src.smart_router import smart_router
 from src.logger import logger
+from src.memory_manager import memory_manager
+from src.provider_manager import provider_manager
 
 class IntentEngine:
     def __init__(self):
@@ -11,15 +13,43 @@ class IntentEngine:
             "GOOGLE_SEARCH": [r"search (?:for )?(.+)", r"google (.+)", r"look up (.+)"],
             "TYPE_TEXT": [r"type (?:text )?\"(.+)\"", r"write \"(.+)\"", r"enter \"(.+)\""]
         }
+        self.context_patterns = {
+            "OPEN_IT": [r"open it", r"open again", r"launch it", r"run it"],
+            "SEARCH_MORE": [r"search more", r"google more", r"look up more"]
+        }
 
     def detect_intent(self, user_input):
         """
-        Detects intent using the smart router, with a rule-based fallback.
+        Detects intent with context awareness and fallback.
         """
-        # The smart router handles caching, complexity analysis, and provider selection
+        user_input_lower = user_input.lower().strip()
+
+        # 1) Handle context follow-ups first
+        for intent, patterns in self.context_patterns.items():
+            for pattern in patterns:
+                if re.fullmatch(pattern, user_input_lower):
+                    if intent == "OPEN_IT":
+                        last_app = memory_manager.get_last_app()
+                        if last_app:
+                            return {
+                                "intent": "OPEN_APP",
+                                "entities": {"app_name": last_app},
+                                "confidence": 1.0,
+                                "raw_input": user_input
+                            }
+                    elif intent == "SEARCH_MORE":
+                        last_search = memory_manager.get_last_search()
+                        if last_search:
+                            return {
+                                "intent": "GOOGLE_SEARCH",
+                                "entities": {"query": last_search},
+                                "confidence": 1.0,
+                                "raw_input": user_input
+                            }
+
+        # 2) Try smart router
         intent_data = self.smart_router.get_intent(user_input)
-        
-        if intent_data:
+        if intent_data and intent_data.get("intent") != "UNKNOWN":
             logger.log_event("SMART_ROUTER_SUCCESS", f"Data: {intent_data}")
             return {
                 "intent": intent_data.get("intent", "UNKNOWN"),
@@ -28,8 +58,31 @@ class IntentEngine:
                 "raw_input": user_input
             }
         
+        # 3) Fallback to rule-based
         logger.log_event("SMART_ROUTER_FAIL", "Falling back to rule-based detection.")
-        return self.detect_intent_rule_based(user_input)
+        rule_data = self.detect_intent_rule_based(user_input)
+        if rule_data.get("intent") != "UNKNOWN":
+            return rule_data
+
+        # 4) AI Fallback with context (last 3 history)
+        logger.log_event("AI_FALLBACK", f"Engaging AI fallback for: {user_input}")
+        history = memory_manager.get_recent(3)
+        history_str = "\n".join([f"User: {h['command']} -> Intent: {h['intent']}" for h in history])
+        
+        active_provider = provider_manager.get_active_provider()
+        if active_provider:
+            context_prompt = f"Previous interactions:\n{history_str}\n\nCurrent Input: {user_input}\n\nAnalyze the intent or provide a helpful suggestion."
+            ai_result = active_provider.generate_intent(context_prompt)
+            if ai_result:
+                return {
+                    "intent": ai_result.get("intent", "UNKNOWN"),
+                    "confidence": 0.7,
+                    "entities": ai_result.get("entities", {}),
+                    "raw_input": user_input,
+                    "message": ai_result.get("message") # Optional message from AI
+                }
+
+        return rule_data
 
     def detect_intent_rule_based(self, user_input):
         """
