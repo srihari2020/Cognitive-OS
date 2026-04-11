@@ -4,6 +4,7 @@ import os
 import time
 import platform
 import shutil
+from src.app_registry import app_registry
 
 # Attempting robust system-wide orchestration
 class ActionEngine:
@@ -57,51 +58,19 @@ class ActionEngine:
             return {"status": "FAILED", "message": "Couldn't open downloads."}
 
     def _resolve_app(self, name):
-        """Resolves fuzzy app names to system executables with aliases and AI fallback."""
-        name = name.lower().strip()
+        """Resolves fuzzy app names to system executables with real registry and AI fallback."""
+        # 1. Try real registry (built at startup)
+        target, display_name = app_registry.resolve(name)
+        if target:
+            return target, display_name
         
-        aliases = {
-            "vs": "vscode",
-            "code": "vscode",
-            "edge": "msedge",
-            "browser": "chrome",
-            "terminal": "powershell",
-        }
-        
-        apps = {
-            "vscode": "code",
-            "chrome": "chrome",
-            "edge": "msedge",
-            "docker": "Docker Desktop",
-            "settings": "ms-settings:",
-            "notepad": "notepad",
-            "calculator": "calc",
-            "terminal": "wt",
-            "powershell": "powershell",
-            "discord": "discord",
-            "slack": "slack",
-            "spotify": "spotify",
-        }
-        
-        # 1. Alias fix
-        if name in aliases:
-            name = aliases[name]
-        
-        # 2. Exact match
-        if name in apps:
-            return apps[name]
-        
-        # 3. Fuzzy match (substring)
-        for key in apps:
-            if name in key or key in name:
-                return apps[key]
-        
-        # 4. AI Fallback (last resort)
+        # 2. AI Fallback (last resort)
         from src.provider_manager import provider_manager
         active_provider = provider_manager.get_active_provider()
         if active_provider:
-            apps_list = ", ".join(apps.keys())
-            prompt = f"Given these known apps: [{apps_list}], which one does the user mean by '{name}'? Return ONLY the app name from the list or 'unknown' if no match. No JSON, just the string."
+            # Only use AI for high-confidence suggestions
+            known_apps = ", ".join(list(app_registry.registry.keys())[:10]) # Limit to top apps for context
+            prompt = f"Given these known apps: [{known_apps}...], which one does the user mean by '{name}'? Return ONLY the app name from the list or 'unknown' if no match. No JSON, just the string."
             try:
                 ai_suggestion = active_provider.generate_intent(prompt)
                 if isinstance(ai_suggestion, dict):
@@ -109,12 +78,14 @@ class ActionEngine:
                 else:
                     suggestion = str(ai_suggestion).strip().lower()
                 
-                if suggestion in apps:
-                    return apps[suggestion]
+                # Check if AI suggested a known app
+                target, display_name = app_registry.resolve(suggestion)
+                if target:
+                    return target, display_name
             except:
                 pass
 
-        return None
+        return None, None
 
     def resolve(self, intent_obj):
         """Pre-resolution step: resolves entities (like app names) without execution."""
@@ -124,9 +95,10 @@ class ActionEngine:
         if intent == "OPEN_APP":
             app_name = entities.get("app_name") or entities.get("query", "")
             if app_name:
-                resolved_name = self._resolve_app(app_name)
-                if resolved_name:
-                    entities["resolved_app"] = resolved_name
+                resolved_target, display_name = self._resolve_app(app_name)
+                if resolved_target:
+                    entities["resolved_app_target"] = resolved_target
+                    entities["resolved_app_display"] = display_name
                     intent_obj["resolved"] = True
         
         return intent_obj
@@ -136,7 +108,7 @@ class ActionEngine:
         entities = intent_obj.get("entities", {})
         
         # Ensure resolution has happened
-        if intent == "OPEN_APP" and "resolved_app" not in entities:
+        if intent == "OPEN_APP" and "resolved_app_target" not in entities:
             intent_obj = self.resolve(intent_obj)
             entities = intent_obj.get("entities", {})
 
@@ -152,29 +124,27 @@ class ActionEngine:
     def _open_vscode(self, entities):
         try:
             subprocess.Popen(["code"], shell=True)
-            return {"status": "SUCCESS", "message": "Opening VS Code."}
+            return {"status": "SUCCESS", "message": "Opening Visual Studio Code."}
         except Exception as e:
-            return {"status": "FAILED", "message": f"Couldn't open VS Code."}
+            return {"status": "FAILED", "message": f"Couldn't open Visual Studio Code."}
 
     def _open_any_app(self, entities):
-        app_name = entities.get("resolved_app") or entities.get("app_name") or entities.get("query", "")
-        if not app_name:
-            return {"status": "FAILED", "message": "No application specified."}
+        target = entities.get("resolved_app_target")
+        display_name = entities.get("resolved_app_display")
+        
+        if not target:
+            # Fallback if not already resolved
+            app_name = entities.get("app_name") or entities.get("query", "")
+            if not app_name:
+                return {"status": "FAILED", "message": "No application specified."}
+            target, display_name = self._resolve_app(app_name)
 
-        # If not already resolved, resolve now
-        resolved_name = entities.get("resolved_app") or self._resolve_app(app_name)
-        if not resolved_name:
+        if not target:
             return {"status": "FAILED", "message": "I couldn't find that app."}
 
         try:
             if platform.system() == "Windows":
-                # Using 'start' to find apps in the PATH or system directories
-                subprocess.Popen(f"start {resolved_name}", shell=True)
-                
-                # Format message nicely
-                display_name = resolved_name.replace("ms-settings:", "Settings").capitalize()
-                if " " in resolved_name: display_name = resolved_name # Keep multi-word names
-                
+                subprocess.Popen(f'start "" "{target}"', shell=True)
                 return {"status": "SUCCESS", "message": f"Opening {display_name}."}
             else:
                 return {"status": "FAILED", "message": "OS not supported for app launching."}

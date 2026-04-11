@@ -1,53 +1,54 @@
 {
     "history": [
         {
-            "timestamp": "2026-04-11T10:26:45.446565",
-            "command": "open Clock",
+            "timestamp": "2026-04-11T12:04:44.880006",
+            "command": "open Calender",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "clock"
+                "app_name": "calender"
             }
         },
         {
-            "timestamp": "2026-04-11T10:27:13.724287",
-            "command": "open Photos",
+            "timestamp": "2026-04-11T12:05:06.041866",
+            "command": "open File Explorer",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "photos"
+                "app_name": "file explorer",
+                "resolved_app_target": "C:\\Users\\sriha\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\File Explorer.lnk",
+                "resolved_app_display": "File Explorer"
             }
         },
         {
-            "timestamp": "2026-04-11T10:27:38.165118",
-            "command": "open Antigravity",
+            "timestamp": "2026-04-11T12:05:31.502812",
+            "command": "open Copilet",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "antigravity"
+                "app_name": "copilet"
             }
         },
         {
-            "timestamp": "2026-04-11T10:27:52.248110",
-            "command": "open edge",
+            "timestamp": "2026-04-11T12:05:49.902299",
+            "command": "open copilot",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "edge",
-                "resolved_app": "msedge"
+                "app_name": "copilot"
             }
         },
         {
-            "timestamp": "2026-04-11T10:28:19.774842",
-            "command": "open Microsoft store",
+            "timestamp": "2026-04-11T12:06:12.625090",
+            "command": "open Spotify",
             "intent": "OPEN_APP",
             "entities": {
-                "app_name": "microsoft store"
+                "app_name": "spotify"
             }
         }
     ],
     "last_apps": [
-        "clock",
-        "photos",
-        "antigravity",
-        "edge",
-        "microsoft store"
+        "calender",
+        "file explorer",
+        "copilet",
+        "copilot",
+        "spotify"
     ],
     "last_search_query": ""
 }
