@@ -1,32 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import CoreOrb from './components/ui/CoreOrb';
-import CommandInput from './components/ui/CommandInput';
+import MicButton from './components/ui/MicButton';
 import MessageCard from './components/ui/MessageCard';
-import BackgroundLayer from './components/ui/BackgroundLayer';
-import { FridayIcon } from './components/ui/Icons';
-import { commandRouter } from './services/commandRouter';
-import { contextStore } from './services/contextStore';
 import { commandService } from './services/api';
-import { aiRouter } from './services/aiRouter';
-import { memoryStore } from './services/memoryStore';
-import { workflowService } from './services/workflowService';
-import { intentService } from './services/intentService';
 import { UIProvider, useUI } from './context/UIContext';
 import { voiceService } from './services/voiceService';
-
-const HARD_SAFE_MODE = false;
-const PARTIAL_SAFE_MODE = true;
+import { motion, AnimatePresence } from 'framer-motion';
 
 const INITIAL_FEATURE_FLAGS = {
   enableSuggestions: true,
   enableOrbAnimation: true,
-  enableBackground: false, // Disabled heavy background
-  enableCursor: false,     // Disabled custom cursor
 };
-
-// Removed unused ACTION_SHORTCUTS
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const createEntry = (text, role = 'assistant', extra = {}) => ({
   id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -35,128 +19,32 @@ const createEntry = (text, role = 'assistant', extra = {}) => ({
   ...extra,
 });
 
-const OVERLAY_QUICK_SUGGESTIONS = [
-  'System status',
-  'Open VS Code',
-  'Quick search',
-];
+import CommandInput from './components/ui/CommandInput';
+
+import BackgroundLayer from './components/ui/BackgroundLayer';
+
+import { intentService } from './services/intentService';
 
 function AppContent() {
-  const [featureFlags, setFeatureFlags] = useState(INITIAL_FEATURE_FLAGS);
   const [responses, setResponses] = useState([
     createEntry('Online and ready. How can I help?', 'system'),
   ]);
-  const [draft, setDraft] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isMerging, setIsMerging] = useState(false);
-  const [isDomainActive, setIsDomainActive] = useState(false);
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [isVoiceSpeaking, setIsVoiceSpeaking] = useState(false);
-  const [wakeStartSignal, setWakeStartSignal] = useState(0);
   const [animationState, setAnimationState] = useState('IDLE');
-  const [assistantMode, setAssistantMode] = useState('active');
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [systemStatus, setSystemStatus] = useState({ status: 'ACTIVE', latency: '1MS' });
-  const [stabilityMode, setStabilityMode] = useState(false);
-  const [activeWorkflow, setActiveWorkflow] = useState(null);
-  const [workflowStatus, setWorkflowStatus] = useState({ currentStep: -1, completed: [], error: null });
-  const [commandHistory, setCommandHistory] = useState([]);
-  const [followUpSuggestions, setFollowUpSuggestions] = useState([]);
-  const [idleIntentLevel, setIdleIntentLevel] = useState('low');
   const scrollRef = useRef(null);
-  const overlayShellRef = useRef(null);
-  const lifecycleTimeoutsRef = useRef([]);
-  const orbButtonRef = useRef(null);
-  const lastOrbNearRef = useRef(false);
-  const idleIntentRef = useRef({
-    lastX: 0,
-    lastY: 0,
-    lastTs: 0,
-    hoverMs: 0,
-    smoothedScore: 0,
-    level: 'low',
-  });
   
-  const LOADING_MESSAGES = [
-    "Working on it...",
-    "One moment...",
-    "Looking into that...",
-    "Almost there...",
-    "Processing...",
-  ];
-  const [currentLoadingMessage, setCurrentLoadingMessage] = useState(LOADING_MESSAGES[0]);
-  const [overlayVisible, setOverlayVisible] = useState(false);
-  const isElectronOverlay = Boolean(window.electronAssistant);
-  const isCompactOverlay = isElectronOverlay && new URLSearchParams(window.location.search).get('overlay') === '1';
+  const { backendStatus } = useUI();
 
   useEffect(() => {
-    if (isCompactOverlay) return;
-    let interval;
-    if (isProcessing) {
-      interval = setInterval(() => {
-        setCurrentLoadingMessage(LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]);
-      }, 2000); // Change message every 2 seconds
-    } else {
-      setCurrentLoadingMessage(LOADING_MESSAGES[0]); // Reset to default
-    }
-    return () => clearInterval(interval);
-  }, [isCompactOverlay, isProcessing]);
-  
-  const {
-    uiMode,
-    setUiMode,
-    behaviorMode,
-    setBehaviorMode,
-    intensity,
-    fps,
-    attentionLevel,
-    startPerformanceSample,
-    syncAnticipationNow,
-    cleanupSignal,
-    performanceTier,
-    visualQuality,
-    qualityScalar,
-    backendStatus,
-  } = useUI();
+    // Initialize Intent Service
+    intentService.init();
 
-  const isBackendOffline = backendStatus === 'OFFLINE';
-  const providerInfo = aiRouter.getProviderInfo();
-
-  const clearLifecycleTimeouts = () => {
-    lifecycleTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
-    lifecycleTimeoutsRef.current = [];
-  };
-
-  // 1. STABILITY: Disable heavy background and mouse reactive systems
-  useEffect(() => {
-    if (typeof stabilityMode !== 'undefined' && stabilityMode) {
-      setFeatureFlags(prev => ({
-        ...prev,
-        enableBackground: false,
-        enableCursor: false
-      }));
-    }
-  }, [stabilityMode]);
-
-  // 2. STABILITY: Single async loop for status if needed, otherwise events only
-  useEffect(() => {
-    if (isCompactOverlay) return;
-    const intervalId = setInterval(() => {
-      if (isBackendOffline) {
-        setSystemStatus({ status: 'OFFLINE', latency: '0MS' });
-      }
-    }, 5000); // 5s interval as requested for stability
-    return () => clearInterval(intervalId);
-  }, [isBackendOffline, isCompactOverlay]);
-
-  useEffect(() => {
-    if (isCompactOverlay) return;
-    // Initialize Voice Service - Click to speak mode
+    // Initialize Voice Service
+    voiceService.start(true); // Continuous listening for wake word "Arise"
     voiceService.onTranscript = (transcript) => {
-      if (transcript.length > 0) {
-        setDraft(transcript);
-      }
+      // Transcript updates are handled here if needed
     };
 
     voiceService.onCommand = (command) => {
@@ -165,621 +53,152 @@ function AppContent() {
       }
     };
 
-    voiceService.onStateChange = ({ isListening, isSpeaking }) => {
+    voiceService.onStateChange = ({ isListening, isSpeaking, isWoken, isActive }) => {
       setIsVoiceListening(isListening);
       setIsVoiceSpeaking(isSpeaking);
-      if (isListening) setAnimationState('PROCESSING');
-      else if (!isSpeaking && !isProcessing) setAnimationState('IDLE');
+      if (isListening) setAnimationState('LISTENING');
+      else if (isSpeaking) setAnimationState('SPEAKING');
+      else if (isProcessing) setAnimationState('PROCESSING');
+      else setAnimationState('IDLE');
     };
 
-    // Manual start only, no auto-continuous
     return () => {
       voiceService.stop();
       voiceService.cancel();
     };
-  }, [isCompactOverlay]);
+  }, []);
 
   useEffect(() => {
-    if (isCompactOverlay) return;
     if (scrollRef.current) {
       scrollRef.current.scrollTo({
         top: scrollRef.current.scrollHeight,
         behavior: 'smooth',
       });
     }
-
-    if (responses.length > 30) {
-      setResponses((current) => current.slice(-30));
-    }
-  }, [responses, activeWorkflow, isCompactOverlay, isProcessing]);
-
-  useEffect(() => {
-    if (!isCompactOverlay) return;
-    const frameId = requestAnimationFrame(() => setOverlayVisible(true));
-    return () => cancelAnimationFrame(frameId);
-  }, [isCompactOverlay]);
-
-  useEffect(() => {
-    if (!isCompactOverlay) return;
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        window.electron?.invoke?.('toggle');
-      }
-    };
-    const onMouseDown = (event) => {
-      const shell = overlayShellRef.current;
-      if (shell && !shell.contains(event.target)) {
-        window.electronAssistant?.hideOverlay?.();
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    document.addEventListener('mousedown', onMouseDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('mousedown', onMouseDown);
-    };
-  }, [isCompactOverlay]);
-
-  useEffect(() => {
-    if (isCompactOverlay) return;
-    clearLifecycleTimeouts();
-    setIsMerging(false);
-    setIsDomainActive(false);
-    if (performanceTier === 'critical') {
-      setAnimationState('IDLE');
-    }
-  }, [cleanupSignal, isCompactOverlay, performanceTier]);
-
-  useEffect(() => {
-    if (isCompactOverlay) return;
-    let mounted = true;
-    if (!window.electronAssistant?.getRuntimeConfig) return;
-
-    window.electronAssistant.getRuntimeConfig().then((config) => {
-      if (!mounted) return;
-      if (typeof setStabilityMode !== 'undefined') {
-        setStabilityMode(Boolean(config?.stabilityMode));
-      }
-      if (config?.stabilityMode) {
-        setAssistantMode('active');
-      }
-    }).catch(() => {});
-
-    return () => {
-      mounted = false;
-    };
-  }, [isCompactOverlay]);
-
-  useEffect(() => {
-    if (!isElectronOverlay || isCompactOverlay) return;
-    const nextMode = (isProcessing || isMerging || isDomainActive) ? 'processing' : assistantMode;
-    window.electronAssistant.setMode(nextMode);
-    if ((typeof stabilityMode !== 'undefined' && stabilityMode) || nextMode !== 'idle') {
-      window.electronAssistant.setOrbProximity(true);
-      window.electronAssistant.setClickThrough(false);
-    } else {
-      window.electronAssistant.setOrbProximity(false);
-      window.electronAssistant.setClickThrough(true);
-    }
-  }, [assistantMode, isCompactOverlay, isElectronOverlay, isMerging, isProcessing, isDomainActive, stabilityMode]);
-
-  useEffect(() => {
-    if (!isElectronOverlay || isCompactOverlay || assistantMode !== 'idle' || (typeof stabilityMode !== 'undefined' && stabilityMode) || !featureFlags.enableOrbAnimation) return;
-    let frameId = null;
-    let pendingMouse = null;
-    const toUnit = (value) => Math.max(0, Math.min(1, value));
-
-    const updateIntentFromMouse = (event) => {
-      const orb = orbButtonRef.current;
-      if (!orb) return;
-      const rect = orb.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const now = performance.now();
-      const previousTimestamp = idleIntentRef.current.lastTs || now;
-      const delta = Math.max(1, now - previousTimestamp);
-      const dxPrevious = event.clientX - idleIntentRef.current.lastX;
-      const dyPrevious = event.clientY - idleIntentRef.current.lastY;
-      const velocity = Math.sqrt(dxPrevious * dxPrevious + dyPrevious * dyPrevious) / delta;
-      const dx = event.clientX - centerX;
-      const dy = event.clientY - centerY;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      const orbRadius = Math.max(rect.width, rect.height) * 0.5;
-      const hoverBand = orbRadius * 2.2;
-      const hoverMs = distance <= hoverBand
-        ? Math.min(4000, idleIntentRef.current.hoverMs + delta)
-        : Math.max(0, idleIntentRef.current.hoverMs - delta * 1.5);
-      const distanceScore = toUnit(1 - (distance - orbRadius) / (hoverBand - orbRadius));
-      const velocityScore = toUnit(1 - velocity / 1.2);
-      const hoverScore = toUnit(hoverMs / 1200);
-      const weightedScore = (distanceScore * 0.55) + (velocityScore * 0.2) + (hoverScore * 0.25);
-      const smoothedScore = idleIntentRef.current.smoothedScore * 0.85 + weightedScore * 0.15;
-
-      let nextLevel = idleIntentRef.current.level;
-      if (nextLevel === 'low' && smoothedScore > 0.58) nextLevel = 'medium';
-      else if (nextLevel === 'medium' && smoothedScore > 0.82) nextLevel = 'high';
-      else if (nextLevel === 'high' && smoothedScore < 0.72) nextLevel = 'medium';
-      else if (nextLevel === 'medium' && smoothedScore < 0.46) nextLevel = 'low';
-
-      idleIntentRef.current = {
-        lastX: event.clientX,
-        lastY: event.clientY,
-        lastTs: now,
-        hoverMs,
-        smoothedScore,
-        level: nextLevel,
-      };
-
-      setIdleIntentLevel((current) => (current === nextLevel ? current : nextLevel));
-
-      const nearOrb = nextLevel !== 'low';
-      if (nearOrb !== lastOrbNearRef.current) {
-        lastOrbNearRef.current = nearOrb;
-        window.electronAssistant.setOrbProximity(nearOrb);
-      }
-
-      if (nextLevel === 'high') {
-        window.electronAssistant.setClickThrough(false);
-        setAssistantMode('active');
-      }
-    };
-
-    const onMouseMove = (event) => {
-      pendingMouse = event;
-      if (frameId) return;
-      frameId = requestAnimationFrame(() => {
-        frameId = null;
-        if (pendingMouse) updateIntentFromMouse(pendingMouse);
-      });
-    };
-
-    window.addEventListener('mousemove', onMouseMove, { passive: true });
-
-    return () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      window.removeEventListener('mousemove', onMouseMove);
-      lastOrbNearRef.current = false;
-      idleIntentRef.current = {
-        lastX: 0,
-        lastY: 0,
-        lastTs: 0,
-        hoverMs: 0,
-        smoothedScore: 0,
-        level: 'low',
-      };
-      setIdleIntentLevel('low');
-      window.electronAssistant.setOrbProximity(false);
-    };
-  }, [assistantMode, featureFlags.enableOrbAnimation, isCompactOverlay, isElectronOverlay, stabilityMode]);
-
-  useEffect(() => {
-    if (!isElectronOverlay || isCompactOverlay) return;
-
-    const unsubscribeVisibility = window.electronAssistant.onVisibilityChange((payload) => {
-      if (payload?.visible) {
-        setAssistantMode('active');
-        contextStore.setActiveApp('Cognitive OS'); // Default when app is visible
-      }
-    });
-
-    const unsubscribeUpdate = window.electronAssistant.onUpdateReady(() => {
-      setSystemStatus((current) => ({ ...current, status: 'UPDATE READY' }));
-    });
-
-    return () => {
-      unsubscribeVisibility?.();
-      unsubscribeUpdate?.();
-    };
-  }, [isCompactOverlay, isElectronOverlay]);
-
-  useEffect(() => {
-    if (isCompactOverlay) return;
-    if (stabilityMode || PARTIAL_SAFE_MODE || isBackendOffline) return;
-    let mounted = true;
-
-    const intervalId = setInterval(async () => {
-      if (isProcessing || isMerging || isDomainActive) return;
-      const wake = await commandService.consumeWakeWord();
-      if (!mounted || !wake?.triggered) return;
-      setWakeStartSignal((current) => current + 1);
-      setAnimationState('PROCESSING');
-    }, 1500);
-
-    return () => {
-      mounted = false;
-      clearInterval(intervalId);
-    };
-  }, [isBackendOffline, isCompactOverlay, isMerging, isProcessing, isDomainActive, stabilityMode]);
-
-  const pushResponse = (entry) => {
-    setResponses((current) => [...current, entry].slice(-30));
-  };
-
-  const finalizeInteraction = () => {
-    setIsMerging(false);
-    setAnimationState('IDLE');
-  };
-
-  const triggerDomainExpansion = async () => {
-    // Disabled for stability
-    return;
-  };
-
-  const speakResponse = (text) => {
-    if (!text) return;
-    const safeText = text.replace(/^\[[^\]]+\]:\s*/i, '').trim();
-    if (!safeText) return;
-    
-    // JARVIS voice configuration
-    voiceService.speak(safeText, () => {
-      if (!isProcessing) setAnimationState('IDLE');
-    });
-  };
-
-  const resolveAssistantResponse = async (prompt) => {
-    if (!isBackendOffline) {
-      try {
-        const result = await commandService.send(prompt);
-        return {
-          text: result?.response || 'Done.',
-          speak: result?.speak || false,
-          provider: 'backend',
-          role: 'assistant',
-        };
-      } catch {
-        // Fallback to direct AI if backend fails
-      }
-    }
-
-    // Direct AI routing with fallback
-    const aiResponse = await aiRouter.route(prompt, {
-      persona: 'FRIDAY',
-      providers: ['OpenAI', 'Gemini'],
-      maxSentences: 2
-    });
-    return {
-      text: aiResponse.text,
-      speak: true, // AI responses are usually spoken
-      provider: aiResponse.provider,
-      role: aiResponse.status === 'ERROR' ? 'system' : 'assistant',
-    };
-  };
+  }, [responses]);
 
   const handleSendCommand = async (text) => {
-    const prompt = text.trim();
-    if (!prompt || isProcessing || activeWorkflow) return;
-
-    // Reset follow-ups on new command
-    setFollowUpSuggestions([]);
-
-    // RESET OPTION: clear memory
-    if (prompt.toLowerCase() === 'clear memory') {
-      memoryStore.clear();
-      contextStore.clear();
-      setResponses([createEntry('Memory cleared. New session started.', 'system')]);
-      speakResponse('Memory cleared.');
-      return;
-    }
-
-    // Interrupt any current speaking when a new command is issued
-    voiceService.cancel();
-
-    if (isElectronOverlay) setAssistantMode('active');
-    setDraft('');
-    setIsSearching(false);
+    if (!text.trim() || isProcessing) return;
+    
     setIsProcessing(true);
     setAnimationState('PROCESSING');
     
-    // Memory Store: Save user input
-    memoryStore.saveMessage('user', prompt);
-
-    // Minimal interaction logic
-    pushResponse(createEntry(prompt, 'user'));
-    contextStore.recordAction('command', prompt);
-    
-    // Auto-Learning: Track command history
-    const updatedHistory = [...commandHistory, prompt].slice(-10);
-    setCommandHistory(updatedHistory);
+    // Add user message
+    const userMsg = createEntry(text, 'user');
+    setResponses(prev => [...prev, userMsg]);
 
     try {
-      // 0. Intent Fast-Path
-      const quickIntent = intentService.detectIntent(prompt);
-      if (quickIntent) {
-        try {
-          const reply = await intentService.handleIntent(quickIntent);
-          
-          // Memory Store: Save action + assistant response
-          memoryStore.saveAction(prompt);
-          memoryStore.saveMessage('assistant', reply);
-          setFollowUpSuggestions(['Want me to open something else?', 'Search more on this?']);
-
-          pushResponse(createEntry(`[FRIDAY]: ${reply}`, 'action'));
-          speakResponse(reply);
-          setSystemStatus((current) => ({ ...current, status: 'ACTION COMPLETE' }));
-          return;
-        } catch {
-          // Silent failover to next handler
-        }
-      }
-
-      // 1. Local Command Routing (Regex/Hardcoded)
-      const localRoute = await commandRouter.route(prompt);
-      if (localRoute.handled) {
-        // Memory Store: Save action + assistant response
-        memoryStore.saveAction(prompt);
-        const replyText = localRoute.isWorkflow ? localRoute.workflow.message : localRoute.message;
-        memoryStore.saveMessage('assistant', replyText);
-        setFollowUpSuggestions(['Want me to open something else?', 'Search more on this?']);
-
-        if (localRoute.isWorkflow) {
-          pushResponse(createEntry(`[FRIDAY]: ${localRoute.workflow.message}`, 'action'));
-          speakResponse(localRoute.workflow.message);
-          executeWorkflow(localRoute.workflow);
-        } else {
-          pushResponse(createEntry(`[FRIDAY]: ${localRoute.message}`, 'action'));
-          speakResponse(localRoute.message);
-        }
-        setSystemStatus((current) => ({ ...current, status: 'ACTION COMPLETE' }));
-        return;
-      }
-
-      // 2. AI-Assisted Intent Routing (Simplified)
-      setSystemStatus((current) => ({ ...current, status: 'THINKING...' }));
-      
-      const result = await resolveAssistantResponse(prompt);
-      const prefix = result.provider && result.provider !== 'backend' ? `[${result.provider}]` : '[FRIDAY]';
-      
-      // Memory Store: Save assistant response
-      memoryStore.saveMessage('assistant', result.text);
-
-      // Check for workflow in result
-      if (result.workflow && result.workflow.steps?.length > 0) {
-        // Memory Store: Save action for workflows too
-        memoryStore.saveAction(prompt);
-        setFollowUpSuggestions(['Want me to open something else?', 'Search more on this?']);
-
-        const workflow = result.workflow;
+      // Intent detection
+      const intent = intentService.detectIntent(text);
+      if (intent) {
+        const responseText = await intentService.handleIntent(intent);
         
-        // Auto-Learning Check: If this is a repeat command, suggest saving
-        const repeatCount = updatedHistory.filter(h => h.toLowerCase() === prompt.toLowerCase()).length;
-        if (repeatCount >= 3) {
-          const routineName = prompt.split(' ').slice(0, 2).join(' ') + ' routine';
-          pushResponse(createEntry(`[FRIDAY]: I noticed you've requested this ${repeatCount} times. Would you like me to save this as a permanent routine called "${routineName}"?`, 'assistant'));
-          speakResponse(`I've noticed you've requested this several times. Would you like me to save this as a permanent routine?`);
-        }
+        // Save to memory
+        memoryStore.saveInteraction(text, intent, responseText);
 
-        // Safety Confirmation: if steps > 2, ask first
-        if (workflow.steps.length > 2) {
-          pushResponse(createEntry(`${prefix}: ${result.text} (Requires confirmation for ${workflow.steps.length} steps)`, result.role));
-          speakResponse(`${result.text}. This is a multi-step sequence. Should I proceed?`);
-          setActiveWorkflow(workflow);
-          setWorkflowStatus({ currentStep: -1, completed: [], error: null });
-        } else {
-          // Execute immediately for small workflows
-          pushResponse(createEntry(`${prefix}: ${result.text}`, result.role));
-          speakResponse(result.text);
-          executeWorkflow(workflow);
-        }
+        const assistantMsg = createEntry(responseText, 'assistant');
+        setResponses(prev => [...prev, assistantMsg]);
+        
+        // TTS
+        voiceService.speak(responseText);
       } else {
-        pushResponse(createEntry(`${prefix}: ${result.text}`, result.role));
-        if (result.speak) {
-          speakResponse(result.text);
-        }
+        const fallbackMsg = createEntry("I'm not sure how to handle that request yet.", 'assistant');
+        setResponses(prev => [...prev, fallbackMsg]);
+        voiceService.speak("I'm not sure how to handle that request yet.");
       }
 
-      setSystemStatus((current) => ({ ...current, status: result.provider === 'backend' ? 'ONLINE' : `${result.provider.toUpperCase()} LINK` }));
     } catch (error) {
-      const message = "I’m having trouble reaching the service.";
-      
-      // Memory Store: Save assistant error response
-      memoryStore.saveMessage('assistant', message);
-
-      pushResponse(createEntry(`COMM LINK ERROR: ${message}`, 'system'));
-      speakResponse(message);
-      setSystemStatus((current) => ({ ...current, status: 'LINK ERROR' }));
+      console.error('Execution error:', error);
+      const errorMsg = createEntry('I encountered an error processing that.', 'assistant');
+      setResponses(prev => [...prev, errorMsg]);
     } finally {
-      finalizeInteraction();
       setIsProcessing(false);
-      if (isCompactOverlay) {
-        window.electronAssistant?.hideOverlay?.();
-      }
+      if (!isVoiceSpeaking) setAnimationState('IDLE');
     }
   };
 
-  const executeWorkflow = async (workflow) => {
-    setActiveWorkflow(workflow);
-    setWorkflowStatus({ currentStep: 0, completed: [], error: null });
-    
-    try {
-      await workflowService.runWorkflow(
-        workflow.steps,
-        (index, step) => {
-          setWorkflowStatus(prev => ({ ...prev, currentStep: index }));
-          setSystemStatus({ status: `STEP ${index + 1}: ${step.action.toUpperCase()}` });
-        },
-        (index, step) => {
-          setWorkflowStatus(prev => ({ ...prev, completed: [...prev.completed, index] }));
-        }
-      );
-      
-      pushResponse(createEntry(`[FRIDAY]: Workflow completed.`, 'action'));
-      speakResponse('Workflow complete.');
-      setSystemStatus({ status: 'WORKFLOW FINISHED' });
-    } catch (error) {
-      setWorkflowStatus(prev => ({ ...prev, error: error.message }));
-      pushResponse(createEntry(`[FRIDAY]: Workflow stopped: ${error.message}`, 'system'));
-      speakResponse(`I've encountered an issue: ${error.message}. Stopping the workflow.`);
-      setSystemStatus({ status: 'WORKFLOW FAILED' });
-    } finally {
-      // Clear active workflow after a short delay to show "Completed" state
-      setTimeout(() => {
-        setActiveWorkflow(null);
-        setWorkflowStatus({ currentStep: -1, completed: [], error: null });
-      }, 3000);
+  const handleMicClick = () => {
+    if (isVoiceListening) {
+      voiceService.stop();
+    } else {
+      voiceService.start();
     }
-  };
-// Removed unused handleShortcut
-  const renderIdleOrb = () => (
-    <button
-      ref={orbButtonRef}
-      type="button"
-      onClick={async () => {
-        setAssistantMode('active');
-      }}
-      className={`absolute inset-0 m-auto flex h-28 w-28 items-center justify-center rounded-full border bg-black/65 transition-all duration-300 ${
-        idleIntentLevel === 'high'
-          ? 'border-cyan-300/85 shadow-[0_0_64px_rgba(34,211,238,0.45)]'
-          : idleIntentLevel === 'medium'
-            ? 'border-cyan-300/55 shadow-[0_0_40px_rgba(34,211,238,0.28)]'
-            : 'border-white/12 shadow-[0_0_24px_rgba(34,211,238,0.16)]'
-      }`}
-      aria-label="Activate assistant"
-    >
-      <div
-        className={`h-10 w-10 rounded-full bg-cyan-300 animate-pulse ${
-          idleIntentLevel === 'high' ? 'scale-125' : 'scale-100'
-        }`}
-      />
-    </button>
-  );
-
-  if (isCompactOverlay) {
-    return (
-      <div className={`overlay h-screen w-screen ${overlayVisible ? 'show' : ''}`}>
-        <div
-          ref={overlayShellRef}
-          className="mx-auto mt-2 w-full max-w-[420px] rounded-2xl border border-white/15 bg-[#0a1222]/95 p-3 shadow-[0_18px_48px_rgba(0,0,0,0.55)] backdrop-blur-md"
-        >
-          <div className="mb-2 flex gap-2">
-            {OVERLAY_QUICK_SUGGESTIONS.map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setDraft(item)}
-                className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/70 hover:border-cyan-400/30 hover:text-cyan-200"
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-          <InputBox
-            value={draft}
-            onChange={setDraft}
-            onSend={handleSendCommand}
-            isProcessing={isProcessing}
-            isListening={isVoiceListening}
-            isSpeaking={isVoiceSpeaking}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  const getAssistantState = () => {
-    if (isVoiceListening) return 'listening';
-    if (isProcessing) return 'processing';
-    return 'idle';
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#05070a] text-white font-sans selection:bg-cyan-500/30">
+    <div className="relative w-screen h-screen overflow-hidden bg-[#0b0f1a] flex flex-col items-center">
       <BackgroundLayer />
-      <CoreOrb state={getAssistantState()} />
+      {/* HUD Decorations */}
+      <div className="hud-decoration">
+        <div className="hud-line" style={{ top: '20%' }} />
+        <div className="hud-line" style={{ bottom: '20%' }} />
+        <div className="hud-line-v" style={{ left: '20%' }} />
+        <div className="hud-line-v" style={{ right: '20%' }} />
+        <div className="hud-bracket hud-bracket-tl" />
+        <div className="hud-bracket hud-bracket-tr" />
+        <div className="hud-bracket hud-bracket-bl" />
+        <div className="hud-bracket hud-bracket-br" />
+        <div className="hud-scanner" />
+      </div>
 
-      {/* Main UI Layer */}
-      <main className="relative z-10 flex-1 flex flex-col items-center overflow-hidden">
-        <div className="w-full max-w-[800px] flex-1 flex flex-col overflow-hidden px-6">
-          
-          {/* Header/Title */}
-          <header className="py-8 flex flex-col items-center gap-2 opacity-40">
-            <h1 className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-400">
-              Cognitive OS
-            </h1>
-            <div className="h-[1px] w-12 bg-cyan-400/20" />
-          </header>
-
-          {/* Chat Area */}
-          <div 
-            ref={scrollRef} 
-            className="flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-4 custom-scrollbar scroll-smooth"
-          >
-            {responses.map((res, idx) => (
-              <MessageCard 
-                key={idx}
-                role={res.role}
-                content={res.text}
-                provider={res.provider}
-              />
-            ))}
-            
-            {isProcessing && (
-              <div className="flex items-center gap-3 px-4 py-2 opacity-40">
-                <div className="loading">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Workflow Preview (If active) */}
-          {activeWorkflow && (
-            <div className="mb-4 p-6 rounded-2xl border border-cyan-500/20 bg-cyan-500/5">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <FridayIcon className="text-cyan-400 animate-pulse" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-cyan-100">
-                    Executing Workflow
-                  </h3>
-                </div>
-              </div>
-              {/* Simplified workflow steps */}
-              <div className="space-y-2">
-                {activeWorkflow.steps.map((step, idx) => (
-                  <div key={idx} className={`text-xs font-mono ${workflowStatus.completed.includes(idx) ? 'text-emerald-400 opacity-50' : 'text-white/60'}`}>
-                    {idx === workflowStatus.currentStep ? '> ' : '  '}
-                    {step.action}: {step.target}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Input Area */}
-          <div className="pb-8 pt-4">
-            <CommandInput
-              value={draft}
-              onChange={setDraft}
-              onSend={handleSendCommand}
-              isProcessing={isProcessing}
-              isListening={isVoiceListening}
-              isSpeaking={isVoiceSpeaking}
-            />
-          </div>
+      {/* Main Centered UI */}
+      <div className="center-ui">
+        <CoreOrb state={animationState} />
+        
+        <div className="flex flex-col items-center gap-4">
+          <MicButton 
+            isListening={isVoiceListening}
+            isSpeaking={isVoiceSpeaking}
+            isProcessing={isProcessing}
+            onClick={handleMicClick}
+          />
         </div>
-      </main>
+      </div>
+
+      {/* Manual Search Fallback (Bottom Right) */}
+      <div className="absolute bottom-10 right-10 z-50">
+        <CommandInput 
+          onSubmit={handleSendCommand} 
+          isProcessing={isProcessing} 
+        />
+      </div>
+
+      {/* Message Feed (Lower Left) */}
+      <div className="absolute bottom-10 left-10 w-full max-w-md z-50">
+        <div 
+          ref={scrollRef}
+          className="max-h-60 overflow-y-auto no-scrollbar flex flex-col gap-3 px-6"
+        >
+          <AnimatePresence mode="popLayout">
+            {responses.slice(-5).map((res) => (
+              <motion.div
+                key={res.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+              >
+                <MessageCard role={res.role} content={res.text} />
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* System Status (Top Right) */}
+      <div className="absolute top-6 right-8 flex items-center gap-4 glass-ui p-3 rounded-xl border-white/5 pointer-events-none">
+        <div className="flex flex-col items-end">
+          <span className="text-[9px] font-mono tracking-widest text-white/40 uppercase">System Status</span>
+          <span className={`text-[10px] font-mono font-bold ${backendStatus === 'OFFLINE' ? 'text-red-500' : 'text-cyan-400'}`}>
+            {backendStatus}
+          </span>
+        </div>
+        <div className={`status-dot-pulse ${backendStatus === 'OFFLINE' ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'bg-cyan-400 shadow-[0_0_10px_rgba(0,234,255,0.5)]'}`} />
+      </div>
     </div>
   );
 }
 
 export default function App() {
-  useEffect(() => {
-    // App lifecycle — no console spam
-    return () => {};
-  }, []);
-
-  if (HARD_SAFE_MODE) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-black text-white">
-        <div className="rounded-xl border border-white/10 bg-white/5 px-6 py-5 font-mono text-sm tracking-widest">
-          HARD SAFE MODE ACTIVE
-        </div>
-      </div>
-    );
-  }
-
   return (
     <UIProvider>
       <AppContent />

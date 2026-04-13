@@ -1,70 +1,98 @@
 import React, { memo, useEffect, useRef } from 'react';
 import anime from 'animejs/lib/anime.es.js';
-import { MicIcon } from './Icons';
 
-const MicButton = memo(({ isListening, isSpeaking, onClick }) => {
+/**
+ * FRIDAY Mic Button
+ * Large circular button with anime.js animated waves.
+ */
+const MicButton = memo(({ isListening, isSpeaking, isProcessing, onClick }) => {
+  const wave1Ref = useRef(null);
+  const wave2Ref = useRef(null);
   const buttonRef = useRef(null);
-  const glowRef = useRef(null);
 
   useEffect(() => {
-    if (!buttonRef.current || !glowRef.current) return;
+    let animations = [];
+
+    if (isListening || isSpeaking || isProcessing) {
+      animations.push(
+        anime({
+          targets: wave1Ref.current,
+          scale: [0.8, 1.5],
+          opacity: [0.5, 0],
+          duration: 1500,
+          easing: 'easeOutExpo',
+          loop: true
+        })
+      );
+
+      animations.push(
+        anime({
+          targets: wave2Ref.current,
+          scale: [0.8, 2],
+          opacity: [0.3, 0],
+          duration: 2000,
+          delay: 500,
+          easing: 'easeOutExpo',
+          loop: true
+        })
+      );
+    }
 
     if (isListening) {
-      anime({
-        targets: buttonRef.current,
-        scale: [1, 1.15],
-        duration: 600,
-        direction: 'alternate',
-        loop: true,
-        easing: 'easeInOutSine'
-      });
-      anime({
-        targets: glowRef.current,
-        opacity: [0.2, 0.6],
-        scale: [1, 1.4],
-        duration: 600,
-        direction: 'alternate',
-        loop: true,
-        easing: 'easeOutQuad'
-      });
-    } else {
-      anime({
-        targets: [buttonRef.current, glowRef.current],
-        scale: 1,
-        opacity: 0,
-        duration: 300,
-        easing: 'easeOutQuad'
-      });
+      animations.push(
+        anime({
+          targets: buttonRef.current,
+          boxShadow: [
+            '0 0 0px rgba(0, 234, 255, 0)',
+            '0 0 30px rgba(0, 234, 255, 0.6)'
+          ],
+          duration: 800,
+          direction: 'alternate',
+          easing: 'easeInOutSine',
+          loop: true
+        })
+      );
     }
 
     return () => {
-      if (buttonRef.current) anime.remove(buttonRef.current);
-      if (glowRef.current) anime.remove(glowRef.current);
+      animations.forEach(a => a.pause());
     };
-  }, [isListening]);
+  }, [isListening, isSpeaking, isProcessing]);
 
   return (
-    <div className="relative flex items-center justify-center">
-      {/* Dynamic Glow Layer */}
-      <div 
-        ref={glowRef}
-        className="absolute inset-0 rounded-xl bg-cyan-400 opacity-0 pointer-events-none blur-md"
-      />
+    <div className="relative flex flex-col items-center gap-6 mt-8">
+      <div className="relative w-20 h-20">
+        {/* Animated Background Waves */}
+        <div 
+          ref={wave1Ref}
+          className="absolute inset-0 rounded-full border border-cyan-400/30 pointer-events-none opacity-0"
+        />
+        <div 
+          ref={wave2Ref}
+          className="absolute inset-0 rounded-full border border-cyan-400/20 pointer-events-none opacity-0"
+        />
+
+        {/* Main Button */}
+        <button
+          ref={buttonRef}
+          onClick={onClick}
+          className={`relative z-20 w-full h-full rounded-full flex items-center justify-center transition-all duration-500 glass-ui friday-btn ${
+            isListening ? 'border-cyan-400 bg-cyan-400/20' : 
+            isProcessing ? 'border-purple-500 bg-purple-500/20' : 'border-white/10 hover:border-white/30'
+          }`}
+        >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={isListening ? 'text-cyan-400' : 'text-white'}>
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" x2="12" y1="19" y2="22" />
+          </svg>
+        </button>
+      </div>
       
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={onClick}
-        className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors duration-300 ${
-          isListening 
-            ? 'bg-cyan-400 text-black shadow-[0_0_20px_rgba(0,240,255,0.4)]' 
-            : isSpeaking
-              ? 'bg-purple-500 text-white'
-              : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white'
-        }`}
-      >
-        <MicIcon className={`h-5 w-5 ${isListening || isSpeaking ? 'animate-pulse' : ''}`} />
-      </button>
+      {/* Helper Text */}
+      <div className={`text-[10px] font-mono tracking-[0.2em] text-cyan-400 uppercase transition-opacity duration-300 ${isListening ? 'opacity-100' : 'opacity-40'}`}>
+        {isListening ? 'Listening...' : isProcessing ? 'Processing...' : 'Click to Speak'}
+      </div>
     </div>
   );
 });

@@ -10,10 +10,12 @@ class VoiceService {
     this.recognition = null;
     this.isListening = false;
     this.isSpeaking = false;
+    this.isActive = false; // Persistent active state
     this.silenceTimer = null;
     this.onTranscript = null;
     this.onCommand = null;
     this.onStateChange = null;
+    this.persistent = true; // Default to continuous listening
     
     this.initRecognition();
   }
@@ -58,20 +60,25 @@ class VoiceService {
       
       if (this.onTranscript) this.onTranscript(transcript);
 
-      // Wake word check: "hey jarvis"
-      if (transcript.includes('hey jarvis') || transcript.includes('hey jarvis')) {
-        // If we were just idling, trigger active listening
-        if (this.onCommand && finalTranscript) {
-          const command = finalTranscript.replace(/hey jarvis/gi, '').trim();
-          if (command) this.onCommand(command);
+      // Wake word check: "arise"
+      if (transcript.includes('arise')) {
+        const parts = transcript.split('arise');
+        const command = parts.length > 1 ? parts.pop().trim() : '';
+        
+        if (!this.isActive) {
+          this.isActive = true;
+          this.speak("Hello sir, how can I help you?");
+          if (this.onStateChange) this.onStateChange({ isListening: true, isSpeaking: true, isWoken: true, isActive: true });
+        }
+
+        if (command && finalTranscript && this.onCommand) {
+          this.onCommand(command);
         }
       }
 
       // Smart Auto Send: If final result, or silence > 1.5s
-      if (finalTranscript) {
+      if (finalTranscript && this.isActive) {
         this.resetSilenceTimer(finalTranscript);
-      } else if (interimTranscript) {
-        this.resetSilenceTimer(interimTranscript);
       }
     };
 
@@ -94,6 +101,8 @@ class VoiceService {
   start(persistent = true) {
     if (!this.recognition || this.isListening) return;
     this.persistent = persistent;
+    // Explicitly set isActive to true if persistent is false (manual trigger)
+    if (persistent === false) this.isActive = true;
     try {
       this.recognition.start();
     } catch (e) {
@@ -108,10 +117,14 @@ class VoiceService {
   }
 
   speak(text, onEnd = null) {
-    if (!window.speechSynthesis) return;
+    if (!window.speechSynthesis || !text) return;
 
     // Interrupt current speech
     this.cancel();
+    
+    // Explicitly set isActive to true when speaking to show speaking state in UI
+    this.isActive = true;
+    this.notifyStateChange();
 
     const utterance = new SpeechSynthesisUtterance(text);
     
@@ -158,7 +171,8 @@ class VoiceService {
     if (this.onStateChange) {
       this.onStateChange({
         isListening: this.isListening,
-        isSpeaking: this.isSpeaking
+        isSpeaking: this.isSpeaking,
+        isActive: this.isActive
       });
     }
   }

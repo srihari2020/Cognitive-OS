@@ -1,4 +1,5 @@
 import re
+import json
 from src.smart_router import smart_router
 from src.logger import logger
 from src.memory_manager import memory_manager
@@ -103,70 +104,36 @@ class IntentEngine:
                 "raw_input": user_input
             }
 
-        # 2) Try smart router for more complex stuff
-        intent_data = self.smart_router.get_intent(user_input)
-        if intent_data and intent_data.get("intent") != "UNKNOWN":
-            logger.log_event("SMART_ROUTER_SUCCESS", f"Data: {intent_data}")
-            return {
-                "intent": intent_data.get("intent", "UNKNOWN"),
-                "confidence": intent_data.get("confidence", 0.0),
-                "entities": intent_data.get("entities", {}),
-                "raw_input": user_input
-            }
-        
-        # 3) Fallback to rule-based patterns
-        rule_data = self.detect_intent_rule_based(user_input)
-        if rule_data.get("intent") != "UNKNOWN":
-            return rule_data
-
-        # 4) AI Fallback with context
-        logger.log_event("AI_FALLBACK", f"Engaging AI fallback for: {user_input}")
+        # 2) AI Fallback for structured action intent
         active_provider = provider_manager.get_active_provider()
         if active_provider:
-            history = memory_manager.get_recent(3)
-            history_str = "\n".join([f"User: {h['command']} -> Intent: {h['intent']}" for h in history])
-            context_prompt = f"Previous interactions:\n{history_str}\n\nCurrent Input: {user_input}\n\nAnalyze the intent and return JSON with 'intent' and 'entities'."
-            ai_result = active_provider.generate_intent(context_prompt)
-            if ai_result:
-                return {
-                    "intent": ai_result.get("intent", "UNKNOWN"),
-                    "confidence": 0.7,
-                    "entities": ai_result.get("entities", {}),
-                    "raw_input": user_input
-                }
+            prompt = f"""
+            Interpret the following user command for a futuristic AI assistant (FRIDAY).
+            Command: "{user_input}"
+            
+            Return ONLY a valid JSON object with the following structure:
+            {{
+                "intent": "STRUCTURED_ACTION",
+                "action": {{
+                    "type": "open_app" | "web_task" | "system_control" | "chat",
+                    "target": "app name" | "url" | "query",
+                    "params": {{ ... additional parameters ... }}
+                }},
+                "response": "A short, calm, FRIDAY-style verbal response (e.g., 'On it.', 'Opening that now.')"
+            }}
+            """
+            try:
+                ai_response = active_provider.generate_intent(user_input, context={"system_prompt": prompt})
+                if isinstance(ai_response, str):
+                    cleaned = ai_response.strip().replace("```json", "").replace("```", "")
+                    return json.loads(cleaned)
+                return ai_response
+            except Exception as e:
+                logger.log_error(f"AI Intent Error: {str(e)}")
 
-        return rule_data
-
-    def detect_intent_rule_based(self, user_input):
-        """
-        Legacy rule-based detection for fallback and low-complexity commands.
-        """
-        user_input_lower = user_input.lower().strip()
-        
-        for intent, patterns in self.patterns.items():
-            for pattern in patterns:
-                match = re.search(pattern, user_input_lower)
-                if match:
-                    entities = {}
-                    if match.groups():
-                        if intent == "GOOGLE_SEARCH":
-                            entities["query"] = match.group(1)
-                        elif intent == "TYPE_TEXT":
-                            entities["text"] = match.group(1)
-                    
-                    return {
-                        "intent": intent,
-                        "confidence": 0.9, # High confidence for rule-based match
-                        "entities": entities,
-                        "raw_input": user_input
-                    }
-        
         return {
             "intent": "UNKNOWN",
-            "confidence": 0.0,
             "entities": {},
+            "confidence": 0.0,
             "raw_input": user_input
         }
-
-# Global instance
-intent_engine = IntentEngine()

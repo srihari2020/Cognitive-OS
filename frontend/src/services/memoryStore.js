@@ -1,61 +1,52 @@
 /**
  * memoryStore.js
  * 
- * Lightweight memory store for context awareness.
- * Remembers recent messages and actions (last 6).
+ * Lightweight memory store for FRIDAY behavior.
+ * Remembers last 20 interactions.
  */
 
 class MemoryStore {
   constructor() {
-    this.history = [];   // [{ role: 'user' | 'assistant', text: string }]
-    this.actions = [];   // [string] - last inputs that triggered an action
-    this.LIMIT = 6;
+    this.interactions = []; // [{ command, intent, result, timestamp }]
+    this.LIMIT = 20;
   }
 
   /**
-   * Saves a message to history.
+   * Saves an interaction to memory.
    */
-  saveMessage(role, text) {
-    this.history.push({ role, text });
-    if (this.history.length > this.LIMIT) {
-      this.history.shift();
+  saveInteraction(command, intent, result) {
+    const interaction = {
+      command,
+      intent,
+      result,
+      timestamp: Date.now()
+    };
+
+    this.interactions.push(interaction);
+    if (this.interactions.length > this.LIMIT) {
+      this.interactions.shift();
     }
   }
 
   /**
-   * Saves an action (input) to actions history.
-   * Filters out continuation commands to avoid recursion.
+   * Returns the last interaction.
    */
-  saveAction(input) {
-    const text = (input || '').trim().toLowerCase();
-    if (text === 'open it' || text === 'launch it') return;
-
-    this.actions.push(input);
-    if (this.actions.length > this.LIMIT) {
-      this.actions.shift();
-    }
+  getLastInteraction() {
+    return this.interactions[this.interactions.length - 1] || null;
   }
 
   /**
-   * Returns the last N history items.
+   * Returns recent interactions for context.
    */
-  getRecentHistory(n = 4) {
-    return this.history.slice(-n);
+  getRecent(n = 5) {
+    return this.interactions.slice(-n);
   }
 
   /**
-   * Returns the last action taken.
-   */
-  getLastAction() {
-    return this.actions[this.actions.length - 1] || null;
-  }
-
-  /**
-   * Clears history and actions.
+   * Clears memory.
    */
   clear() {
-    this.history = [];
-    this.actions = [];
+    this.interactions = [];
   }
 }
 

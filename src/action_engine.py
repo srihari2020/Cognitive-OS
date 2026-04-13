@@ -104,22 +104,44 @@ class ActionEngine:
         return intent_obj
 
     def execute(self, intent_obj):
+        """Dispatches the intent to the appropriate internal method."""
         intent = intent_obj.get("intent")
         entities = intent_obj.get("entities", {})
         
-        # Ensure resolution has happened
-        if intent == "OPEN_APP" and "resolved_app_target" not in entities:
-            intent_obj = self.resolve(intent_obj)
-            entities = intent_obj.get("entities", {})
+        # FRIDAY Structured Action Support
+        if intent == "STRUCTURED_ACTION":
+            action = intent_obj.get("action", {})
+            action_type = action.get("type")
+            target = action.get("target")
+            params = action.get("params", {})
+            
+            if action_type == "open_app":
+                return self._open_any_app({"app_name": target})
+            elif action_type == "web_task":
+                return self._web_task(target, params)
+            elif action_type == "system_control":
+                return self._system_info({})
+            elif action_type == "chat":
+                return {"status": "SUCCESS", "message": intent_obj.get("response", "I'm here.")}
 
-        action_func = self.actions.get(intent)
-        if action_func:
-            try:
-                return action_func(entities)
-            except Exception as e:
-                return {"status": "FAILED", "message": f"Execution error."}
-        else:
-            return {"status": "FAILED", "message": f"I couldn't find that command."}
+        if intent in self.actions:
+            return self.actions[intent](entities)
+        
+        return {"status": "FAILED", "message": f"Action for intent '{intent}' not mapped."}
+
+    def _web_task(self, target, params):
+        """Enhanced browser automation."""
+        try:
+            if target.startswith("http"):
+                webbrowser.open(target)
+                return {"status": "SUCCESS", "message": f"Navigating to {target}."}
+            else:
+                # Default to search if not a URL
+                url = f"https://www.google.com/search?q={target}"
+                webbrowser.open(url)
+                return {"status": "SUCCESS", "message": f"Searching for '{target}'."}
+        except Exception as e:
+            return {"status": "FAILED", "message": f"Web task failed: {str(e)}"}
 
     def _open_vscode(self, entities):
         try:

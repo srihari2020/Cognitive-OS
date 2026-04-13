@@ -289,10 +289,104 @@
   100% { content: "."; }
 }
 
-/* ═══════════════════════════════════════════════════
-   FRIDAY SPIN (for GojoLogo processing ring)
-   ═══════════════════════════════════════════════════ */
+@layer components {
+  /* ─── FRIDAY Spin (for GojoLogo processing ring) ─── */
+  .friday-spin {
+    animation: friday-spin 3s linear infinite;
+  }
 
-.friday-spin {
-  animation: friday-spin 3s linear infinite;
+  /* ─── Centered Assistant UI ─── */
+  .center-ui {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+    z-index: 100;
+    width: 100%;
+    max-width: 600px;
+    pointer-events: none;
+  }
+
+  .center-ui > * {
+    pointer-events: auto;
+  }
+
+  /* ─── HUD Decorations ─── */
+  .hud-decoration {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .hud-line {
+    position: absolute;
+    background: linear-gradient(90deg, transparent, rgba(0, 234, 255, 0.2), transparent);
+    height: 1px;
+    width: 100%;
+  }
+
+  .hud-line-v {
+    position: absolute;
+    background: linear-gradient(180deg, transparent, rgba(0, 234, 255, 0.2), transparent);
+    width: 1px;
+    height: 100%;
+  }
+
+  .hud-bracket {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(0, 234, 255, 0.3);
+  }
+
+  .hud-bracket-tl { top: 40px; left: 40px; border-right: 0; border-bottom: 0; }
+  .hud-bracket-tr { top: 40px; right: 40px; border-left: 0; border-bottom: 0; }
+  .hud-bracket-bl { bottom: 40px; left: 40px; border-right: 0; border-top: 0; }
+  .hud-bracket-br { bottom: 40px; right: 40px; border-left: 0; border-top: 0; }
+
+  /* ─── Animated HUD Elements ─── */
+  .hud-scanner {
+    position: absolute;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(0, 234, 255, 0.5), transparent);
+    top: 0;
+    animation: hud-scan 4s linear infinite;
+    z-index: 5;
+  }
+
+  @keyframes hud-scan {
+    0% { top: 0; opacity: 0; }
+    5% { opacity: 1; }
+    95% { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  /* ─── Center UI Layout Enhancements ─── */
+  .orb-container {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .orb-status-text {
+    font-family: var(--font-orbitron);
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: rgba(0, 234, 255, 0.6);
+    text-transform: uppercase;
+    margin-top: 10px;
+  }
 }

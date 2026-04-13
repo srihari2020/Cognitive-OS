@@ -1,6 +1,64 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, session, shell } = require("electron");
 const path = require("path");
-const { spawn } = require("child_process");
+const { exec, spawn } = require("child_process");
+
+// Helper to scan for installed apps on Windows
+async function scanInstalledApps() {
+  const apps = new Map();
+  const searchPaths = [
+    "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs",
+    path.join(process.env.APPDATA, "Microsoft\\Windows\\Start Menu\\Programs"),
+    "C:\\Program Files",
+    "C:\\Program Files (x86)"
+  ];
+
+  const scanDir = (dir) => {
+    try {
+      if (!fs.existsSync(dir)) return;
+      const files = fs.readdirSync(dir);
+      for (const file of files) {
+        const fullPath = path.join(dir, file);
+        const stats = fs.statSync(fullPath);
+        if (stats.isDirectory()) {
+          scanDir(fullPath);
+        } else if (file.endsWith(".lnk") || file.endsWith(".exe")) {
+          const name = path.basename(file, path.extname(file)).toLowerCase();
+          if (!apps.has(name)) {
+            apps.set(name, fullPath);
+          }
+        }
+      }
+    } catch (e) {
+      // Skip inaccessible directories
+    }
+  };
+
+  searchPaths.forEach(scanDir);
+  return Object.fromEntries(apps);
+}
+
+// IPC handlers for FRIDAY execution
+ipcMain.handle("execute-command", async (_, command) => {
+  return new Promise((resolve) => {
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        log.error(`Execution error: ${error.message}`);
+        resolve({ success: false, error: error.message });
+        return;
+      }
+      resolve({ success: true, stdout, stderr });
+    });
+  });
+});
+
+ipcMain.handle("scan-apps", async () => {
+  return await scanInstalledApps();
+});
+
+ipcMain.handle("open-external", async (_, url) => {
+  await shell.openExternal(url);
+  return { success: true };
+});
 const fs = require("fs");
 const os = require("os");
 const log = require("electron-log/main");

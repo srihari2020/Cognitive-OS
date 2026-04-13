@@ -1,26 +1,6 @@
 {
     "history": [
         {
-            "timestamp": "2026-04-11T14:00:05.449711",
-            "command": "open openai",
-            "intent": "OPEN_APP",
-            "entities": {
-                "app_name": "ai",
-                "resolved_app_target": "C:\\Program Files\\Microsoft Office\\root\\vfs\\ProgramFilesCommonX64\\Microsoft Shared\\OFFICE16\\AI\\ai.exe",
-                "resolved_app_display": "ai"
-            }
-        },
-        {
-            "timestamp": "2026-04-11T14:00:31.260154",
-            "command": "open Spotify",
-            "intent": "OPEN_APP",
-            "entities": {
-                "app_name": "spotify",
-                "resolved_app_target": "C:\\Program Files\\WindowsApps\\SpotifyAB.SpotifyMusic_1.286.502.0_x64__zpdnekdrzrea0\\Spotify.exe",
-                "resolved_app_display": "Spotify"
-            }
-        },
-        {
             "timestamp": "2026-04-11T14:00:52.867082",
             "command": "open Settings",
             "intent": "OPEN_APP",
@@ -49,21 +29,41 @@
                 "resolved_app_target": "C:\\Users\\sriha\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\https--www.youtube.com-live-IhNJjkwrpTcsi=8b_MgA0Jg50BqcWo.lnk",
                 "resolved_app_display": "https--www.youtube.com-live-IhNJjkwrpTcsi=8b_MgA0Jg50BqcWo"
             }
+        },
+        {
+            "timestamp": "2026-04-11T15:41:51.748998",
+            "command": "open vscode",
+            "intent": "OPEN_APP",
+            "entities": {
+                "app_name": "vscode",
+                "resolved_app_target": "code",
+                "resolved_app_display": "Vscode"
+            }
+        },
+        {
+            "timestamp": "2026-04-11T15:42:10.165853",
+            "command": "open settings",
+            "intent": "OPEN_APP",
+            "entities": {
+                "app_name": "settings",
+                "resolved_app_target": "ms-settings:",
+                "resolved_app_display": "Settings"
+            }
         }
     ],
     "last_apps": [
-        "ai",
-        "Spotify",
         "Settings",
         "Vscode",
-        "https--www.youtube.com-live-IhNJjkwrpTcsi=8b_MgA0Jg50BqcWo"
+        "https--www.youtube.com-live-IhNJjkwrpTcsi=8b_MgA0Jg50BqcWo",
+        "Vscode",
+        "Settings"
     ],
     "last_search_query": "",
     "frequency": {
-        "vscode": 3,
+        "vscode": 4,
         "ai": 1,
         "spotify": 1,
-        "settings": 1,
+        "settings": 2,
         "https--www.youtube.com-live-ihnjjkwrptcsi=8b_mga0jg50bqcwo": 1
     }
 }

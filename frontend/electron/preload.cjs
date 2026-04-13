@@ -6,13 +6,15 @@ contextBridge.exposeInMainWorld("electronAssistant", {
   setOrbProximity: (isNear) => ipcRenderer.invoke("assistant:set-orb-proximity", isNear),
   getRuntimeConfig: () => ipcRenderer.invoke("assistant:get-runtime-config"),
   toggle: () => ipcRenderer.invoke("assistant:toggle"),
-  openExternal: (url) => ipcRenderer.invoke("assistant:open-external", url),
+  openExternal: (url) => ipcRenderer.invoke("open-external", url),
   openPath: (target) => ipcRenderer.invoke("assistant:open-path", target),
   launchApp: (appName) => ipcRenderer.invoke("assistant:launch-app", appName),
   setVolume: (level) => ipcRenderer.invoke("assistant:set-volume", level),
   getVolume: () => ipcRenderer.invoke("assistant:get-volume"),
   getSystemInfo: () => ipcRenderer.invoke("assistant:get-system-info"),
   hideOverlay: () => ipcRenderer.invoke("assistant:hide-overlay"),
+  executeCommand: (command) => ipcRenderer.invoke("execute-command", command),
+  scanApps: () => ipcRenderer.invoke("scan-apps"),
   onVisibilityChange: (callback) => {
     if (typeof callback !== "function") return () => {};
     const handler = (_event, payload) => callback(payload);
