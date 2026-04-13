@@ -45,12 +45,13 @@ function AppContent() {
     intentService.init();
 
     // Initialize Voice Service
-    voiceService.start(true); // Continuous listening for wake word "Arise"
+    // Removed: voiceService.start(true); - Only start on manual trigger or wake word
+    
     voiceService.onTranscript = (transcript) => {
       // Transcript updates are handled here if needed
     };
 
-    voiceService.onCommand = (command) => {
+    voiceService.onResult = (command) => {
       if (command && command.trim().length > 1) {
         handleSendCommand(command);
       }
@@ -70,6 +71,14 @@ function AppContent() {
       voiceService.cancel();
     };
   }, []);
+
+  const toggleVoice = () => {
+    if (isVoiceListening) {
+      voiceService.stop();
+    } else {
+      voiceService.start();
+    }
+  };
 
   useEffect(() => {
     if (scrollRef.current) {

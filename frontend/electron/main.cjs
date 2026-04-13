@@ -55,6 +55,11 @@ ipcMain.handle("execute-command", async (_, command) => {
   });
 });
 
+ipcMain.handle("exec", async (_, command) => {
+  exec(command);
+  return { success: true };
+});
+
 ipcMain.handle("scan-apps", async () => {
   return await scanInstalledApps();
 });

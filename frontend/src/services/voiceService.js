@@ -1,134 +1,79 @@
 /**
  * voiceService.js
  * 
- * Handles Speech-to-Text (STT) via Web Speech API and 
- * Text-to-Speech (TTS) via SpeechSynthesis.
+ * Single Instance Voice Controller for FRIDAY.
  */
+
+let recognition = null;
+let isListening = false;
 
 class VoiceService {
   constructor() {
-    this.recognition = null;
-    this.isListening = false;
-    this.isSpeaking = false;
-    this.isActive = false; // Persistent active state
-    this.silenceTimer = null;
-    this.onTranscript = null;
-    this.onCommand = null;
-    this.onStateChange = null;
-    this.persistent = true; // Default to continuous listening
-    
-    this.initRecognition();
+    this.onResult = null;
+    this.initVoice();
   }
 
-  initRecognition() {
+  initVoice() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.warn('Speech recognition not supported in this browser.');
-      return;
-    }
+    
+    if (!recognition && SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
 
-    this.recognition = new SpeechRecognition();
-    this.recognition.continuous = true;
-    this.recognition.interimResults = true;
-    this.recognition.lang = 'en-US';
+      recognition.onstart = () => {
+        isListening = true;
+        this.notifyStateChange();
+      };
 
-    this.recognition.onstart = () => {
-      this.isListening = true;
-      this.notifyStateChange();
-    };
-
-    this.recognition.onend = () => {
-      this.isListening = false;
-      this.notifyStateChange();
-      // Auto-restart if we want persistent "Hey Jarvis"
-      if (this.persistent) this.start();
-    };
-
-    this.recognition.onresult = (event) => {
-      let interimTranscript = '';
-      let finalTranscript = '';
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
-        } else {
-          interimTranscript += event.results[i][0].transcript;
-        }
-      }
-
-      const transcript = (finalTranscript || interimTranscript).toLowerCase().trim();
-      
-      if (this.onTranscript) this.onTranscript(transcript);
-
-      // Wake word check: "arise"
-      if (transcript.includes('arise')) {
-        const parts = transcript.split('arise');
-        const command = parts.length > 1 ? parts.pop().trim() : '';
+      recognition.onresult = (event) => {
+        const text = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
         
-        if (!this.isActive) {
-          this.isActive = true;
+        // Wake word check
+        if (text.includes("arise")) {
           this.speak("Hello sir, how can I help you?");
-          if (this.onStateChange) this.onStateChange({ isListening: true, isSpeaking: true, isWoken: true, isActive: true });
+          return;
         }
 
-        if (command && finalTranscript && this.onCommand) {
-          this.onCommand(command);
+        if (this.onResult) {
+          this.onResult(text);
         }
-      }
+      };
 
-      // Smart Auto Send: If final result, or silence > 1.5s
-      if (finalTranscript && this.isActive) {
-        this.resetSilenceTimer(finalTranscript);
-      }
-    };
+      recognition.onend = () => {
+        isListening = false;
+        this.notifyStateChange();
+      };
 
-    this.recognition.onerror = (event) => {
-      console.error('Speech recognition error:', event.error);
-      this.isListening = false;
-      this.notifyStateChange();
-    };
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        isListening = false;
+        this.notifyStateChange();
+      };
+    }
   }
 
-  resetSilenceTimer(text) {
-    if (this.silenceTimer) clearTimeout(this.silenceTimer);
-    this.silenceTimer = setTimeout(() => {
-      if (text && text.length > 2 && this.onCommand) {
-        this.onCommand(text);
-      }
-    }, 1500); // 1.5s silence auto-submit
-  }
-
-  start(persistent = true) {
-    if (!this.recognition || this.isListening) return;
-    this.persistent = persistent;
-    // Explicitly set isActive to true if persistent is false (manual trigger)
-    if (persistent === false) this.isActive = true;
+  startListening() {
+    if (!recognition || isListening) return;
     try {
-      this.recognition.start();
+      recognition.start();
+      // Note: isListening is updated in onstart
     } catch (e) {
       console.error('Failed to start recognition:', e);
     }
   }
 
-  stop() {
-    if (!this.recognition || !this.isListening) return;
-    this.persistent = false;
-    this.recognition.stop();
+  stopListening() {
+    if (!recognition || !isListening) return;
+    recognition.stop();
+    // Note: isListening is updated in onend
   }
 
-  speak(text, onEnd = null) {
+  speak(text) {
     if (!window.speechSynthesis || !text) return;
-
-    // Interrupt current speech
-    this.cancel();
-    
-    // Explicitly set isActive to true when speaking to show speaking state in UI
-    this.isActive = true;
-    this.notifyStateChange();
-
+    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     
-    // Select a female voice if available
     const voices = window.speechSynthesis.getVoices();
     const femaleVoice = voices.find(v => 
       v.name.toLowerCase().includes("female") || 
@@ -137,13 +82,9 @@ class VoiceService {
       v.name.includes("Samantha")
     );
 
-    if (femaleVoice) {
-      utterance.voice = femaleVoice;
-    }
-
-    utterance.rate = 1.0; // Natural rate
-    utterance.pitch = 1.1; // Slightly higher for FRIDAY style
-    utterance.volume = 1.0;
+    if (femaleVoice) utterance.voice = femaleVoice;
+    utterance.rate = 1.0;
+    utterance.pitch = 1.1;
 
     utterance.onstart = () => {
       this.isSpeaking = true;
@@ -153,29 +94,24 @@ class VoiceService {
     utterance.onend = () => {
       this.isSpeaking = false;
       this.notifyStateChange();
-      if (onEnd) onEnd();
     };
 
-    speechSynthesis.speak(utterance);
-  }
-
-  cancel() {
-    if (window.speechSynthesis) {
-      speechSynthesis.cancel();
-      this.isSpeaking = false;
-      this.notifyStateChange();
-    }
+    window.speechSynthesis.speak(utterance);
   }
 
   notifyStateChange() {
     if (this.onStateChange) {
       this.onStateChange({
-        isListening: this.isListening,
-        isSpeaking: this.isSpeaking,
-        isActive: this.isActive
+        isListening,
+        isSpeaking: this.isSpeaking
       });
     }
   }
+
+  // Compatibility methods for existing code
+  start() { this.startListening(); }
+  stop() { this.stopListening(); }
+  cancel() { window.speechSynthesis.cancel(); this.stopListening(); }
 }
 
 export const voiceService = new VoiceService();

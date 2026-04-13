@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("electronAssistant", {
 });
 
 contextBridge.exposeInMainWorld("electron", {
+  exec: (cmd) => ipcRenderer.invoke("exec", cmd),
   invoke: (channel, payload) => {
     if (channel === "toggle") return ipcRenderer.invoke("assistant:toggle");
     if (channel === "hideOverlay") return ipcRenderer.invoke("assistant:hide-overlay", payload);

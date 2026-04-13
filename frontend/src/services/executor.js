@@ -39,10 +39,35 @@ export const runWorkflow = async (plan, onStepStart) => {
  */
 async function executeStep(step) {
   const bridge = window.electronAssistant;
+  const electron = window.electron;
   if (!bridge) throw new Error("System bridge unavailable, sir.");
 
   switch (step.action) {
     case "open_app": {
+      const appMap = {
+        youtube: "start https://youtube.com",
+        whatsapp: "start https://web.whatsapp.com",
+        edge: "start msedge",
+        chrome: "start chrome",
+        vscode: "code",
+        settings: "start ms-settings:"
+      };
+
+      const target = step.target.toLowerCase();
+      const cmd = appMap[target];
+
+      if (cmd) {
+        if (electron && electron.exec) {
+          electron.exec(cmd);
+          return { status: "success", message: `Opening ${step.target}, sir.` };
+        } else {
+          // Fallback to bridge if electron.exec is missing for some reason
+          await bridge.executeCommand(cmd);
+          return { status: "success", message: `Opening ${step.target}, sir.` };
+        }
+      }
+
+      // Fallback to scanned apps if not in static map
       const app = intentService.findBestApp(step.target);
       if (!app) return { status: "failed", message: `I couldn't locate ${step.target} locally, sir.` };
       
