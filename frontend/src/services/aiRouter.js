@@ -80,11 +80,11 @@ class AIRouter {
     const keys = credentialManager.loadKeys();
     let lastError = null;
 
-    // Use memoryStore for context (last 4 items)
-    const context = memoryStore.getRecentHistory(4).map(m => ({
-      role: m.role,
-      content: m.text
-    }));
+    // Use memoryStore for context (last 4 conversation turns)
+    const context = memoryStore.getConversationHistory(4).flatMap(m => [
+      { role: 'user', content: m.user },
+      { role: 'assistant', content: m.ai }
+    ]);
 
     // Prepare messages for AI, including system prompt and context
     const messages = [
@@ -150,7 +150,7 @@ class AIRouter {
     }
 
     return {
-      text: lastError || "I’m having trouble reaching the service.",
+      text: "I'm having trouble connecting to AI, but I can still execute system commands, sir.",
       status: 'ERROR',
       provider: 'ROUTER'
     };

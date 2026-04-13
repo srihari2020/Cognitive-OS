@@ -8,9 +8,11 @@
 class MemoryStore {
   constructor() {
     this.interactions = this.loadFromLocal('friday_interactions') || [];
+    this.conversationHistory = this.loadFromLocal('friday_conversation_history') || [];
     this.habits = this.loadFromLocal('friday_habits') || {}; // { "command": { count: 0, timestamps: [] } }
     this.workflows = this.loadFromLocal('friday_workflows') || {}; // { "name": { count: 0, steps: [], timestamps: [] } }
-    this.LIMIT = 50;
+    this.INTERACTION_LIMIT = 50;
+    this.CONVERSATION_LIMIT = 10; // Store last 10 conversation turns
   }
 
   saveInteraction(command, plan, result) {
@@ -22,7 +24,7 @@ class MemoryStore {
     };
 
     this.interactions.push(interaction);
-    if (this.interactions.length > this.LIMIT) this.interactions.shift();
+    if (this.interactions.length > this.INTERACTION_LIMIT) this.interactions.shift();
     
     this.updateHabits(command);
     
@@ -32,6 +34,16 @@ class MemoryStore {
     }
     
     this.saveToLocal('friday_interactions', this.interactions);
+  }
+
+  saveConversation(userMessage, aiResponse) {
+    this.conversationHistory.push({ user: userMessage, ai: aiResponse, timestamp: Date.now() });
+    if (this.conversationHistory.length > this.CONVERSATION_LIMIT) this.conversationHistory.shift();
+    this.saveToLocal('friday_conversation_history', this.conversationHistory);
+  }
+
+  getConversationHistory(limit = 5) {
+    return this.conversationHistory.slice(-limit);
   }
 
   updateHabits(command) {
@@ -91,6 +103,21 @@ class MemoryStore {
       return null;
     }
   }
+
+  // Aliases for compatibility
+  add(user, ai) {
+    this.saveConversation(user, ai);
+  }
+
+  get() {
+    return this.getConversationHistory();
+  }
+
+  // Alias used by aiRouter
+  getRecentHistory(limit = 5) {
+    return this.getConversationHistory(limit);
+  }
 }
 
 export const memoryStore = new MemoryStore();
+export default memoryStore;

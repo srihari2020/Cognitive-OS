@@ -46,7 +46,7 @@ class VoiceService {
       };
 
       recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
+        console.log("Mic error ignored:", event.error);
         isListening = false;
         this.notifyStateChange();
       };
@@ -54,12 +54,16 @@ class VoiceService {
   }
 
   startListening() {
-    if (!recognition || isListening) return;
+    if (!recognition) return;
+    if (isListening) {
+      console.log("Already listening, ignoring start request");
+      return;
+    }
     try {
       recognition.start();
       // Note: isListening is updated in onstart
     } catch (e) {
-      console.error('Failed to start recognition:', e);
+      console.log('Failed to start recognition (ignored):', e.message);
     }
   }
 

@@ -146,6 +146,7 @@ function AppContent() {
 
         // 2. Autonomous Execution Layer
         if (planResult.plan && planResult.plan.length > 0) {
+          console.log("Executing plan:", planResult.plan);
           await runWorkflow(planResult.plan);
           // 3. Save to Memory
           memoryStore.saveInteraction(text, planResult.plan, { success: true });

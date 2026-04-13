@@ -13,6 +13,9 @@ if (!isElectron) {
   console.warn("FRIDAY: Running in browser mode — OS execution disabled, sir.");
 }
 
+// Execution throttling to prevent duplicate triggers
+let isExecuting = false;
+
 /**
  * Runs a multi-step workflow plan autonomously.
  */
@@ -21,26 +24,43 @@ export const runWorkflow = async (plan, onStepStart) => {
     return { success: false, error: "System bridge unavailable. Please run in Electron, sir." };
   }
 
-  const results = [];
-  for (let i = 0; i < plan.length; i++) {
-    const step = plan[i];
-    if (onStepStart) onStepStart(i + 1, plan.length, step);
-    
-    try {
-      const result = await executeStep(step);
-      results.push(result);
-      
-      if (result.status === "failed") {
-        return { success: false, error: result.message, results };
-      }
-      
-      await new Promise(r => setTimeout(r, 800));
-    } catch (e) {
-      console.error(`FRIDAY: Step ${i + 1} failed:`, e);
-      return { success: false, error: e.message, results };
-    }
+  // Throttle: prevent duplicate execution
+  if (isExecuting) {
+    console.log("Execution already in progress, skipping duplicate request");
+    return { success: false, error: "Already executing a command" };
   }
-  return { success: true, results };
+
+  isExecuting = true;
+
+  try {
+    const results = [];
+    for (let i = 0; i < plan.length; i++) {
+      const step = plan[i];
+      if (onStepStart) onStepStart(i + 1, plan.length, step);
+      
+      try {
+        const result = await executeStep(step);
+        results.push(result);
+        
+        if (result.status === "failed") {
+          return { success: false, error: result.message, results };
+        }
+        
+        // Longer delay for multi-step commands (e.g., open app then search)
+        const delay = plan.length > 1 && step.action === "open_app" ? 2000 : 800;
+        await new Promise(r => setTimeout(r, delay));
+      } catch (e) {
+        console.error(`FRIDAY: Step ${i + 1} failed:`, e);
+        return { success: false, error: e.message, results };
+      }
+    }
+    return { success: true, results };
+  } finally {
+    // Release lock after 1.5s to prevent rapid re-execution
+    setTimeout(() => {
+      isExecuting = false;
+    }, 1500);
+  }
 };
 
 /**
@@ -56,9 +76,14 @@ async function executeStep(step) {
 
   switch (step.action) {
     case "open_app": {
-      // Safety Rule: Only use pre-validated cmd from intentService
+      // Use pre-validated cmd from intentService (already has correct routing)
       if (step.cmd) {
-        electron.exec(step.cmd);
+        console.log("Executing app command:", step.cmd);
+        const result = await electron.exec(step.cmd);
+        if (result && !result.ok) {
+          console.error("App execution failed:", result.error);
+          return { status: "failed", message: `Failed to open ${step.target}: ${result.error}` };
+        }
         return { status: "success", message: `Opening ${step.target}, sir.` };
       }
       return { status: "failed", message: `I couldn't locate ${step.target} locally, sir.` };
@@ -105,7 +130,7 @@ async function executeStep(step) {
     }
 
     case "chat": {
-      return { status: "success", message: "Processing information." };
+      return { status: "success", message: step.message };
     }
 
     default:

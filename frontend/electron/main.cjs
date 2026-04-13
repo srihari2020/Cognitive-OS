@@ -1,78 +1,25 @@
+// ==========================================
+// Imports
+// ==========================================
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, session, shell, desktopCapturer } = require("electron");
 const path = require("path");
 const { exec, spawn } = require("child_process");
-const robot = require("robotjs");
-
-// Set speed of mouse movements
-robot.setMouseDelay(2);
-
-// Helper to scan for installed apps on Windows
-async function scanInstalledApps() {
-  const apps = new Map();
-  const searchPaths = [
-    "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs",
-    path.join(process.env.APPDATA, "Microsoft\\Windows\\Start Menu\\Programs"),
-    "C:\\Program Files",
-    "C:\\Program Files (x86)"
-  ];
-
-  const scanDir = (dir) => {
-    try {
-      if (!fs.existsSync(dir)) return;
-      const files = fs.readdirSync(dir);
-      for (const file of files) {
-        const fullPath = path.join(dir, file);
-        const stats = fs.statSync(fullPath);
-        if (stats.isDirectory()) {
-          scanDir(fullPath);
-        } else if (file.endsWith(".lnk") || file.endsWith(".exe")) {
-          const name = path.basename(file, path.extname(file)).toLowerCase();
-          if (!apps.has(name)) {
-            apps.set(name, fullPath);
-          }
-        }
-      }
-    } catch (e) {
-      // Skip inaccessible directories
-    }
-  };
-
-  searchPaths.forEach(scanDir);
-  return Object.fromEntries(apps);
-}
-
-// IPC handlers for FRIDAY execution
-ipcMain.handle("execute-command", async (_, command) => {
-  return new Promise((resolve) => {
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        log.error(`Execution error: ${error.message}`);
-        resolve({ success: false, error: error.message });
-        return;
-      }
-      resolve({ success: true, stdout, stderr });
-    });
-  });
-});
-
-ipcMain.handle("exec", async (_, command) => {
-  exec(command);
-  return { success: true };
-});
-
-ipcMain.handle("scan-apps", async () => {
-  return await scanInstalledApps();
-});
-
-ipcMain.handle("open-external", async (_, url) => {
-  await shell.openExternal(url);
-  return { success: true };
-});
 const fs = require("fs");
+const fsPromises = fs.promises;
 const os = require("os");
+const robot = require("robotjs");
 const log = require("electron-log/main");
 const { autoUpdater } = require("electron-updater");
 const loudness = require("loudness");
+
+// ==========================================
+// Config & State
+// ==========================================
+// Set speed of mouse movements
+robot.setMouseDelay(2);
+
+// Cache for scanned applications
+let cachedApps = {};
 
 // HARD SAFE MODE: reduce GPU/system risk while debugging crashes.
 app.disableHardwareAcceleration();
@@ -98,6 +45,62 @@ let isClickThroughEnabled = false;
 let backendProcess = null;
 let backendStartAttempted = false;
 let updateCheckStarted = false;
+
+// ==========================================
+// Helper Functions
+// ==========================================
+
+// Helper to scan for installed apps on Windows
+async function scanInstalledApps() {
+  log.info("Scanning for applications...");
+  const apps = new Map();
+  const searchPaths = [
+    "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs",
+    path.join(process.env.APPDATA, "Microsoft\\Windows\\Start Menu\\Programs"),
+    "C:\\Program Files",
+    "C:\\Program Files (x86)"
+  ];
+
+  const scanDir = async (dir) => {
+    try {
+      if (!await fsPromises.access(dir).then(() => true).catch(() => false)) return; // Check if directory exists
+      const files = await fsPromises.readdir(dir, { withFileTypes: true });
+      for (const file of files) {
+        const fullPath = path.join(dir, file.name);
+        if (file.isDirectory()) {
+          await scanDir(fullPath); // Recursively scan subdirectories
+        } else if (file.isFile()) {
+          if (file.name.endsWith(".lnk")) {
+            // For .lnk files, we might need to resolve the target. This is complex in Node.js
+            // and often requires native modules or external tools. For simplicity, we'll
+            // just use the .lnk name for now, or skip if a direct .exe is preferred.
+            // A more robust solution would involve parsing the .lnk file.
+            const name = path.basename(file.name, ".lnk").toLowerCase();
+            if (!apps.has(name)) {
+              apps.set(name, fullPath); // Store .lnk path
+            }
+          } else if (file.name.endsWith(".exe")) {
+            const name = path.basename(file.name, ".exe").toLowerCase();
+            if (!apps.has(name)) {
+              apps.set(name, fullPath);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // log.warn(`Could not scan directory ${dir}: ${e.message}`);
+    }
+  };
+
+  for (const dir of searchPaths) {
+    await scanDir(dir);
+  }
+
+  const result = Object.fromEntries(apps);
+  cachedApps = result; // Cache the results
+  log.info(`Found ${Object.keys(cachedApps).length} applications.`);
+  return cachedApps;
+}
 
 function getProjectRoot() {
   return path.join(__dirname, "..", "..");
@@ -383,6 +386,10 @@ function configureAutoUpdater() {
   }, 7000);
 }
 
+// ==========================================
+// App Lifecycle
+// ==========================================
+
 app.whenReady().then(() => {
   wireAppLogging();
   log.info("App ready (backend disabled temporarily)");
@@ -434,6 +441,40 @@ app.on("activate", () => {
   }
 });
 
+// ==========================================
+// IPC Handlers
+// ==========================================
+
+// IPC handler for scanning applications
+ipcMain.handle("assistant:scan-apps", async () => {
+  if (Object.keys(cachedApps).length === 0) {
+    return await scanInstalledApps();
+  }
+  return cachedApps;
+});
+
+ipcMain.handle("scan-apps", async () => {
+  try {
+    const apps = [];
+    const programDirs = [
+      "C:\\Program Files",
+      "C:\\Program Files (x86)"
+    ];
+
+    for (const dir of programDirs) {
+      if (!fs.existsSync(dir)) continue;
+
+      const items = fs.readdirSync(dir);
+      apps.push(...items);
+    }
+    console.log("Apps found:", apps.length);
+    return apps;
+  } catch (err) {
+    console.error("Scan apps error:", err);
+    return [];
+  }
+});
+
 ipcMain.handle("assistant:set-mode", (_event, mode) => {
   applyMode(mode);
   return { ok: true };
@@ -472,6 +513,30 @@ ipcMain.handle("assistant:open-external", async (_event, url) => {
   if (!url || typeof url !== "string") return { ok: false, error: "Invalid URL" };
   await shell.openExternal(url);
   return { ok: true };
+});
+
+// Alias: preload exposes openExternal via "open-external" channel
+ipcMain.handle("open-external", async (_event, url) => {
+  if (!url || typeof url !== "string") return { ok: false, error: "Invalid URL" };
+  await shell.openExternal(url);
+  return { ok: true };
+});
+
+// Handler for window.electron.exec used by executor.js
+ipcMain.handle("exec", async (_event, cmd) => {
+  if (!cmd || typeof cmd !== "string") return { ok: false, error: "Invalid command" };
+  log.info("Executing command:", cmd);
+  return new Promise((resolve) => {
+    exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
+      if (error) {
+        log.warn("exec error:", error.message);
+        resolve({ ok: false, error: error.message });
+      } else {
+        log.info("exec success:", stdout.trim() || "(no output)");
+        resolve({ ok: true, stdout: stdout.trim() });
+      }
+    });
+  });
 });
 
 ipcMain.handle("assistant:open-path", async (_event, target) => {
