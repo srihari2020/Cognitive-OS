@@ -24,6 +24,8 @@ import CommandInput from './components/ui/CommandInput';
 import BackgroundLayer from './components/ui/BackgroundLayer';
 
 import { intentService } from './services/intentService';
+import { execute } from './services/executor';
+import { memoryStore } from './services/memoryStore';
 
 function AppContent() {
   const [responses, setResponses] = useState([
@@ -88,23 +90,27 @@ function AppContent() {
     setResponses(prev => [...prev, userMsg]);
 
     try {
-      // Intent detection
+      // 1. Intent Detection (AI Simulation)
       const intent = intentService.detectIntent(text);
+      
       if (intent) {
-        const responseText = await intentService.handleIntent(intent);
+        // 2. Execution Layer
+        const result = await execute(intent);
         
-        // Save to memory
-        memoryStore.saveInteraction(text, intent, responseText);
+        // 3. Save to Memory
+        memoryStore.saveInteraction(text, intent, result);
 
-        const assistantMsg = createEntry(responseText, 'assistant');
+        // 4. UI Update
+        const assistantMsg = createEntry(result, 'assistant');
         setResponses(prev => [...prev, assistantMsg]);
         
-        // TTS
-        voiceService.speak(responseText);
+        // 5. FRIDAY Voice Response
+        const speechText = intent.response || result;
+        voiceService.speak(speechText);
       } else {
-        const fallbackMsg = createEntry("I'm not sure how to handle that request yet.", 'assistant');
+        const fallbackMsg = createEntry("I need more clarity on that request, sir.", 'assistant');
         setResponses(prev => [...prev, fallbackMsg]);
-        voiceService.speak("I'm not sure how to handle that request yet.");
+        voiceService.speak("I need more clarity on that request, sir.");
       }
 
     } catch (error) {
