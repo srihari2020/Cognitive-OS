@@ -28,6 +28,9 @@ import { runWorkflow } from './services/executor';
 import { memoryStore } from './services/memoryStore';
 import { proactiveEngine } from './services/proactiveEngine';
 
+import ChatWidget from './components/ui/ChatWidget';
+import SettingsPanel from './components/ui/SettingsPanel';
+
 function AppContent() {
   const [responses, setResponses] = useState([
     createEntry('Online and ready. How can I help?', 'system'),
@@ -36,13 +39,33 @@ function AppContent() {
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [isVoiceSpeaking, setIsVoiceSpeaking] = useState(false);
   const [animationState, setAnimationState] = useState('IDLE');
-  const [isTextMode, setIsTextMode] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [thinkingMessage, setThinkingMessage] = useState('Thinking...');
   const scrollRef = useRef(null);
   
+  const thinkingMessages = [
+    "Thinking...",
+    "Analyzing your request...",
+    "Consulting systems...",
+    "One moment, sir...",
+    "Processing..."
+  ];
+
+  useEffect(() => {
+    let interval;
+    if (isProcessing) {
+      let i = 0;
+      interval = setInterval(() => {
+        setThinkingMessage(thinkingMessages[i % thinkingMessages.length]);
+        i++;
+      }, 2000);
+    }
+    return () => clearInterval(interval);
+  }, [isProcessing]);
+
   const { backendStatus, behaviorMode, switchMode } = useUI();
   const isElectron = !!(window.electron && window.electron.exec);
-
-  const isHandyMode = behaviorMode === 'handy';
 
   useEffect(() => {
     if (!isElectron) {
@@ -81,7 +104,6 @@ function AppContent() {
       voiceService.stop();
     } else {
       voiceService.start();
-      setIsTextMode(false); // Switch away from text if mic clicked
     }
   };
 
@@ -109,56 +131,48 @@ function AppContent() {
     setResponses(prev => [...prev, userMsg]);
 
     try {
-      // 1. AI Planning Step via Gemini
-      const planningEntry = createEntry("Consulting Gemini...", 'system', { isPlanning: true });
-      setResponses(prev => [...prev, planningEntry]);
-      
+      // 1. AI Planning Step via Gemini/Grok
       const planResult = await intentService.generatePlan(text);
       
-      if (planResult && planResult.plan && planResult.plan.length > 0) {
+      if (planResult) {
         // Voice initial response (Conversational)
-        voiceService.speak(planResult.response);
-        setResponses(prev => [
-          ...prev.filter(r => !r.isPlanning),
-          createEntry(planResult.response, 'assistant')
-        ]);
+        if (planResult.response) {
+          voiceService.speak(planResult.response);
+          setResponses(prev => [
+            ...prev,
+            createEntry(planResult.response, 'assistant')
+          ]);
+        }
 
         // 2. Autonomous Execution Layer
-        const workflowResult = await runWorkflow(planResult.plan, (current, total, step) => {
-          // Silent execution or minimal feedback for natural feel
-        });
-        
-        // 3. Save to Memory
-        memoryStore.saveInteraction(text, planResult.plan, workflowResult);
+        if (planResult.plan && planResult.plan.length > 0) {
+          await runWorkflow(planResult.plan);
+          // 3. Save to Memory
+          memoryStore.saveInteraction(text, planResult.plan, { success: true });
+        }
 
       } else {
-        setResponses(prev => prev.filter(r => !r.isPlanning));
-        const conversationalResponse = planResult.response || "I'm not quite sure how to help with that, sir.";
-        setResponses(prev => [...prev, createEntry(conversationalResponse, 'assistant')]);
-        voiceService.speak(conversationalResponse);
+        const fallback = "I'm having trouble processing that, sir. Please try again.";
+        setResponses(prev => [...prev, createEntry(fallback, 'assistant')]);
+        voiceService.speak(fallback);
       }
 
     } catch (error) {
-      console.error('Execution error:', error);
-      const errorMsg = createEntry('I encountered an error processing that request, sir.', 'assistant');
-      setResponses(prev => [...prev, errorMsg]);
-      voiceService.speak("I encountered an error processing that request, sir.");
+      console.error('FRIDAY: Execution error:', error);
+      const errorMsg = error.message || 'I encountered an error processing that request, sir.';
+      setResponses(prev => [...prev, createEntry(errorMsg, 'assistant')]);
+      voiceService.speak(errorMsg);
     } finally {
       setIsProcessing(false);
       if (!isVoiceSpeaking) setAnimationState('IDLE');
     }
   };
 
-  const toggleHandyMode = () => {
-    const nextMode = behaviorMode === 'handy' ? 'active' : 'handy';
-    switchMode(nextMode);
-  };
-
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#0b0f1a] flex flex-col items-center">
       <BackgroundLayer />
       
-      {/* HUD Decorations (Static) */}
+      {/* HUD Decorations */}
       <div className="hud-decoration opacity-20 pointer-events-none">
         <div className="hud-line" style={{ top: '20%' }} />
         <div className="hud-line" style={{ bottom: '20%' }} />
@@ -170,11 +184,21 @@ function AppContent() {
         <div className="hud-bracket hud-bracket-br" />
       </div>
 
-      {/* Main Centered UI (Stable) */}
+      {/* Main Centered UI */}
       <div className="center-ui flex flex-col items-center justify-center h-full">
         <CoreOrb state={animationState} />
         
         <div className="flex flex-col items-center gap-8 mt-12">
+          {isProcessing && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-cyan-400/60 font-mono text-[10px] uppercase tracking-[0.3em] animate-pulse"
+            >
+              {thinkingMessage}
+            </motion.div>
+          )}
+          
           <MicButton 
             isListening={isVoiceListening}
             isSpeaking={isVoiceSpeaking}
@@ -183,44 +207,66 @@ function AppContent() {
           />
           
           <button 
-            onClick={toggleHandyMode}
+            onClick={() => setIsSettingsOpen(true)}
             className="px-6 py-2 rounded-full glass-ui border border-white/10 text-[10px] font-mono text-white/40 hover:text-cyan-400 hover:border-cyan-400/50 transition-all uppercase tracking-widest"
           >
-            {behaviorMode === 'handy' ? 'Disable Assist Mode' : 'Enable Assist Mode'}
+            System Settings
           </button>
         </div>
       </div>
 
-      {/* Manual Search (Bottom Right) */}
-      <div className="absolute bottom-10 right-10 z-50">
+      {/* Manual Search */}
+      <div className="absolute bottom-10 right-24 z-50">
         <CommandInput 
           onSubmit={handleSendCommand} 
           isProcessing={isProcessing} 
         />
       </div>
 
-      {/* Message Feed (Lower Left) */}
-      <div className="absolute bottom-10 left-10 w-full max-w-md z-50 pointer-events-none">
-        <div 
-          ref={scrollRef}
-          className="max-h-60 overflow-y-auto no-scrollbar flex flex-col gap-3 px-6 pointer-events-auto"
-        >
-          <AnimatePresence mode="popLayout">
-            {responses.slice(-5).map((res) => (
-              <motion.div
-                key={res.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-              >
-                <MessageCard role={res.role} content={res.text} />
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-      </div>
+      {/* Floating ChatWidget */}
+      <ChatWidget 
+        isOpen={isChatOpen}
+        onClose={setIsChatOpen}
+        responses={responses}
+        onSendCommand={handleSendCommand}
+        isProcessing={isProcessing}
+        isVoiceListening={isVoiceListening}
+        isVoiceSpeaking={isVoiceSpeaking}
+        onMicClick={handleMicClick}
+        animationState={animationState}
+        thinkingMessage={thinkingMessage}
+      />
 
-      {/* System Status (Top Right) */}
+      {/* Settings Panel */}
+      <SettingsPanel 
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* Message Feed (Legacy, only show in full UI) */}
+      {!isChatOpen && (
+        <div className="absolute bottom-10 left-10 w-full max-w-md z-50 pointer-events-none">
+          <div 
+            ref={scrollRef}
+            className="max-h-60 overflow-y-auto no-scrollbar flex flex-col gap-3 px-6 pointer-events-auto"
+          >
+            <AnimatePresence mode="popLayout">
+              {responses.slice(-5).map((res) => (
+                <motion.div
+                  key={res.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                >
+                  <MessageCard role={res.role} content={res.text} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        </div>
+      )}
+
+      {/* System Status */}
       <div className="absolute top-6 right-8 flex items-center gap-4 glass-ui p-3 rounded-xl border-white/5 pointer-events-none">
         <div className="flex flex-col items-end">
           <span className="text-[9px] font-mono tracking-widest text-white/40 uppercase">System Status</span>

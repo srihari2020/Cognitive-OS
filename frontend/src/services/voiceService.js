@@ -75,11 +75,13 @@ class VoiceService {
     const utterance = new SpeechSynthesisUtterance(text);
     
     const voices = window.speechSynthesis.getVoices();
+    // Prefer a female voice for FRIDAY persona
     const femaleVoice = voices.find(v => 
       v.name.toLowerCase().includes("female") || 
       v.name.includes("Google UK English Female") || 
       v.name.includes("Microsoft Zira") ||
-      v.name.includes("Samantha")
+      v.name.includes("Samantha") ||
+      v.name.includes("Victoria")
     );
 
     if (femaleVoice) utterance.voice = femaleVoice;

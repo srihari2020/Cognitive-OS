@@ -1,22 +1,16 @@
 import { geminiService } from './geminiService';
 import { backgroundService } from './BackgroundService';
 
-const APP_MAP = {
-  "youtube": "start https://youtube.com",
-  "whatsapp": "start https://web.whatsapp.com",
-  "edge": "start msedge",
-  "vs code": "code",
-  "vscode": "code",
-  "settings": "start ms-settings:",
-  "chrome": "start chrome",
-  "calculator": "calc",
-  "notepad": "notepad",
-  "spotify": "start spotify",
-  "yt": "start https://youtube.com",
-  "github": "start https://github.com",
-  "explorer": "explorer",
-  "documents": "explorer shell:Personal",
-  "downloads": "explorer shell:Downloads"
+const ALLOWED_APPS = {
+  chrome: "start chrome",
+  edge: "start msedge",
+  vscode: "code",
+  youtube: "start https://youtube.com",
+  whatsapp: "start https://web.whatsapp.com",
+  settings: "start ms-settings:",
+  calculator: "calc",
+  notepad: "notepad",
+  explorer: "explorer"
 };
 
 let scannedApps = {};
@@ -25,8 +19,8 @@ let scannedApps = {};
 const isElectron = !!(window.electron && window.electron.exec);
 
 /**
- * FRIDAY Intent Service (AI-Driven Version)
- * Uses Gemini as the primary brain, with a fallback pattern matcher.
+ * FRIDAY Intent Service (AI-Driven & Safety-Validated)
+ * Uses Gemini for decision making, with strict validation rules.
  */
 export const intentService = {
   async init() {
@@ -39,7 +33,6 @@ export const intentService = {
     if (bridge && bridge.scanApps) {
       try {
         scannedApps = await bridge.scanApps();
-        console.log('FRIDAY: System apps scanned:', Object.keys(scannedApps).length);
       } catch (e) {
         console.error('FRIDAY: Failed to scan system apps:', e);
       }
@@ -47,7 +40,7 @@ export const intentService = {
   },
 
   /**
-   * Generates a plan by consulting the Gemini Brain.
+   * Generates a validated plan by consulting Gemini.
    */
   async generatePlan(text) {
     const currentState = backgroundService.getState();
@@ -57,66 +50,102 @@ export const intentService = {
     };
 
     try {
-      // 1. Ask Gemini for intent and natural response
-      const geminiResult = await geminiService.ask(text, context);
+      // 1. Get Intent from Gemini Brain
+      const geminiData = await geminiService.ask(text, context);
       
-      if (geminiResult && geminiResult.plan) {
-        return {
-          plan: geminiResult.plan,
-          response: geminiResult.response,
-          confidence: 0.9,
-          thought: geminiResult.thought
-        };
-      }
+      // 2. Validate and Construct Plan
+      const validatedPlan = this.validateAndBuildPlan(geminiData);
+
+      return {
+        plan: validatedPlan,
+        response: geminiData.response,
+        confidence: validatedPlan.length > 0 ? 0.95 : 0.5,
+        thought: geminiData.thought
+      };
     } catch (e) {
-      console.error("Gemini Brain failure, falling back to local patterns:", e);
+      console.error("Gemini Brain failure:", e);
+      return this.fallbackMatcher(text);
+    }
+  },
+
+  /**
+   * ACTION VALIDATOR (STRICT SAFETY LAYER)
+   */
+  validateAndBuildPlan(data) {
+    const plan = [];
+    const intent = data.intent;
+    const app = (data.app || "").toLowerCase().trim();
+
+    // Safety Rule: Only execute whitelisted intents
+    switch (intent) {
+      case "open_app":
+        if (ALLOWED_APPS[app]) {
+          plan.push({ action: "open_app", target: app, cmd: ALLOWED_APPS[app] });
+        } else {
+          // Check scanned apps for safety fallback
+          const scanned = this.findScannedApp(app);
+          if (scanned) plan.push({ action: "open_app", target: scanned.name, cmd: scanned.cmd });
+        }
+        break;
+
+      case "search":
+        if (data.query) {
+          const provider = app === "youtube" ? "youtube" : "google";
+          plan.push({ action: "search_web", query: data.query, provider });
+        }
+        break;
+
+      case "ui_action":
+        if (["click", "scroll_down", "scroll_up"].includes(data.sub_action)) {
+          plan.push({ action: "ui_action", sub_action: data.sub_action });
+        }
+        break;
+
+      case "tab_control":
+        if (["new_tab", "switch_tab", "close_tab"].includes(data.sub_action)) {
+          plan.push({ action: "tab_control", sub_action: data.sub_action });
+        }
+        break;
+
+      case "file_action":
+        if (["extract", "zip"].includes(data.sub_action) && data.target) {
+          plan.push({ action: "file_action", sub_action: data.sub_action, target: data.target });
+        }
+        break;
+
+      case "set_volume":
+        if (typeof data.target === "number") {
+          plan.push({ action: "set_volume", target: data.target });
+        }
+        break;
+
+      default:
+        // "chat" intent or unknown intent results in empty plan (no system action)
+        break;
     }
 
-    // 2. Local Fallback Pattern Matcher (Safety Net)
-    return this.fallbackMatcher(text);
+    return plan;
+  },
+
+  findScannedApp(name) {
+    for (const [appName, appPath] of Object.entries(scannedApps)) {
+      if (appName.toLowerCase().includes(name)) {
+        return { name: appName, cmd: `"${appPath}"` };
+      }
+    }
+    return null;
   },
 
   fallbackMatcher(text) {
     const input = text.toLowerCase().trim();
-    const result = {
-      plan: [],
-      confidence: 0,
-      response: "I'll handle that for you, sir.",
-      thought: "Using local pattern matching fallback."
-    };
-
-    // Simple pattern matching for core commands
-    if (input.includes('open') || input.includes('launch')) {
-      const appName = input.replace(/(open|launch)/, '').trim();
-      if (appName) {
-        result.plan = [{ action: "open_app", target: appName }];
-        result.confidence = 0.8;
-        result.response = `Opening ${appName} for you, sir.`;
-      }
-    } else if (input.includes('search')) {
-      const query = input.replace('search', '').trim();
-      if (query) {
-        result.plan = [{ action: "search_web", query: query, provider: "google" }];
-        result.confidence = 0.8;
-        result.response = `Searching for ${query} on Google, sir.`;
-      }
+    if (input.includes("open chrome")) {
+      return {
+        plan: [{ action: "open_app", target: "chrome", cmd: ALLOWED_APPS.chrome }],
+        response: "Opening Chrome for you, sir.",
+        confidence: 0.9
+      };
     }
-
-    return result;
-  },
-
-  findBestApp(target) {
-    const name = target.toLowerCase().trim();
-    
-    // 1. Static Map
-    if (APP_MAP[name]) return { name: target, cmd: APP_MAP[name], type: 'map' };
-
-    // 2. Scanned Apps
-    for (const [appName, appPath] of Object.entries(scannedApps)) {
-      if (appName.toLowerCase().includes(name)) {
-        return { name: appName, cmd: `"${appPath}"`, type: 'scanned' };
-      }
-    }
-    return null;
+    return { plan: [], response: "I'm processing that information now, sir.", confidence: 0.5 };
   }
 };
+

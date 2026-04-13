@@ -56,12 +56,12 @@ async function executeStep(step) {
 
   switch (step.action) {
     case "open_app": {
-      const app = intentService.findBestApp(step.target);
-      if (!app) return { status: "failed", message: `I couldn't locate ${step.target} locally, sir.` };
-      
-      // Use real OS execution for all apps
-      electron.exec(app.cmd);
-      return { status: "success", message: `Opening ${app.name}, sir.` };
+      // Safety Rule: Only use pre-validated cmd from intentService
+      if (step.cmd) {
+        electron.exec(step.cmd);
+        return { status: "success", message: `Opening ${step.target}, sir.` };
+      }
+      return { status: "failed", message: `I couldn't locate ${step.target} locally, sir.` };
     }
 
     case "open_folder": {
@@ -95,11 +95,13 @@ async function executeStep(step) {
     }
 
     case "search_web": {
-      const url = step.provider === "youtube" 
-        ? `https://www.youtube.com/results?search_query=${encodeURIComponent(step.query)}`
-        : `https://www.google.com/search?q=${encodeURIComponent(step.query)}`;
+      // Safety Rule: Use encodeURIComponent for query parameters
+      const baseUrl = step.provider === "youtube" 
+        ? "https://www.youtube.com/results?search_query="
+        : "https://www.google.com/search?q=";
+      const url = `${baseUrl}${encodeURIComponent(step.query)}`;
       electron.exec(`start ${url}`);
-      return { status: "success", message: `Searched for ${step.query}, sir.` };
+      return { status: "success", message: `Searching for ${step.query}, sir.` };
     }
 
     case "chat": {
