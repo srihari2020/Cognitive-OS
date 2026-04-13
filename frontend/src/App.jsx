@@ -24,7 +24,7 @@ import CommandInput from './components/ui/CommandInput';
 import BackgroundLayer from './components/ui/BackgroundLayer';
 
 import { intentService } from './services/intentService';
-import { execute } from './services/executor';
+import { runWorkflow } from './services/executor';
 import { memoryStore } from './services/memoryStore';
 
 function AppContent() {
@@ -90,24 +90,44 @@ function AppContent() {
     setResponses(prev => [...prev, userMsg]);
 
     try {
-      // 1. Intent Detection (AI Simulation)
-      const intent = intentService.detectIntent(text);
+      // 1. AI Planning Step
+      const planningEntry = createEntry("Planning workflow...", 'system', { isPlanning: true });
+      setResponses(prev => [...prev, planningEntry]);
       
-      if (intent) {
-        // 2. Execution Layer
-        const result = await execute(intent);
-        
-        // 3. Save to Memory
-        memoryStore.saveInteraction(text, intent, result);
+      const planResult = intentService.generatePlan(text);
+      
+      if (planResult && planResult.plan && planResult.plan.length > 0) {
+        // Voice initial response
+        voiceService.speak(planResult.response);
 
-        // 4. UI Update
-        const assistantMsg = createEntry(result, 'assistant');
-        setResponses(prev => [...prev, assistantMsg]);
+        // 2. Autonomous Execution Layer
+        const workflowResult = await runWorkflow(planResult.plan, (current, total, step) => {
+          const stepMsg = `Executing step ${current} of ${total}: ${step.action}...`;
+          setResponses(prev => [
+            ...prev.filter(r => !r.isPlanning),
+            createEntry(stepMsg, 'system', { isPlanning: true })
+          ]);
+        });
         
-        // 5. FRIDAY Voice Response
-        const speechText = intent.response || result;
-        voiceService.speak(speechText);
+        // Remove planning indicator
+        setResponses(prev => prev.filter(r => !r.isPlanning));
+
+        // 3. Save to Memory
+        memoryStore.saveInteraction(text, planResult.plan, workflowResult);
+
+        // 4. Final UI Feedback
+        const finalStatus = workflowResult.success 
+          ? "Workflow completed successfully, sir." 
+          : `I ran into an issue, sir: ${workflowResult.error}`;
+          
+        setResponses(prev => [...prev, createEntry(finalStatus, 'assistant')]);
+        if (workflowResult.success && !planResult.response.includes("completed")) {
+          voiceService.speak("Workflow completed successfully, sir.");
+        } else if (!workflowResult.success) {
+          voiceService.speak("I ran into an issue executing the workflow, sir.");
+        }
       } else {
+        setResponses(prev => prev.filter(r => !r.isPlanning));
         const fallbackMsg = createEntry("I need more clarity on that request, sir.", 'assistant');
         setResponses(prev => [...prev, fallbackMsg]);
         voiceService.speak("I need more clarity on that request, sir.");

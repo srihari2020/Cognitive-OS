@@ -2,7 +2,7 @@ import { memoryStore } from './memoryStore';
 
 const APP_MAP = {
   "youtube": "https://youtube.com",
-  "whatsapp": "whatsapp://",
+  "whatsapp": "https://web.whatsapp.com",
   "edge": "start msedge",
   "vs code": "code",
   "vscode": "code",
@@ -11,14 +11,15 @@ const APP_MAP = {
   "calculator": "calc",
   "notepad": "notepad",
   "spotify": "start spotify",
-  "yt": "https://youtube.com"
+  "yt": "https://youtube.com",
+  "github": "https://github.com"
 };
 
 let scannedApps = {};
 
 /**
- * FRIDAY Intent Service
- * Responsible for understanding intent, resolving apps, and returning structured JSON actions.
+ * FRIDAY Intent Service (Autonomous Workflow Version)
+ * Generates multi-step plans for complex tasks.
  */
 export const intentService = {
   async init() {
@@ -34,175 +35,127 @@ export const intentService = {
   },
 
   /**
-   * Step 1 & 2: Understand intent and extract entities.
-   * Returns structured intent object.
+   * AI Planning Step: Converts user input into a multi-step workflow plan.
    */
-  detectIntent(input) {
+  generatePlan(input) {
     const text = (input || '').trim().toLowerCase();
     if (!text) return null;
 
+    // Default response structure
     const result = {
-      intent: "unknown",
-      target: null,
-      query: null,
-      message: null,
-      person: null,
-      confidence: 0,
-      response: "I'm not quite sure how to handle that request yet, sir."
+      plan: [],
+      response: "I'm planning that workflow for you now, sir.",
+      confidence: 0
     };
 
-    // Memory-based continuation
-    if (text === 'open it' || text === 'launch it' || text === 'do it') {
+    // 1. Memory-based reuse
+    if (text === 'send it again' || text === 'do it again' || text === 'repeat last') {
       const lastAction = memoryStore.getLastInteraction();
-      if (lastAction && lastAction.intent) {
-        return { ...lastAction.intent, response: `Executing that for you now, sir.` };
+      if (lastAction && lastAction.plan) {
+        return { 
+          plan: lastAction.plan, 
+          response: "Repeating the last workflow for you, sir.",
+          confidence: 1.0 
+        };
       }
     }
 
-    // Intent: open_app
-    const openMatch = text.match(/^(?:open|launch|start|run|go to)\s+(.+)/i);
-    if (openMatch) {
-      result.intent = "open_app";
-      result.target = openMatch[1].trim();
-      result.confidence = 0.95;
-      result.response = `Opening ${result.target} for you, sir.`;
+    // 2. Complex Scenario: Coding Setup
+    if (text.includes('coding setup') || text.includes('setup for work')) {
+      result.plan = [
+        { action: "open_app", target: "vscode" },
+        { action: "open_app", target: "chrome" },
+        { action: "open_app", target: "github" }
+      ];
+      result.response = "Initializing your coding environment now, sir.";
+      result.confidence = 0.98;
       return result;
     }
 
-    // Intent: search_web
-    const searchMatch = text.match(/^(?:search|google|search\s+for|look\s+up|find)\s+(.+)/i);
-    if (searchMatch) {
-      result.intent = "search_web";
-      result.query = searchMatch[1].trim();
-      result.confidence = 0.9;
-      result.response = `Searching for "${result.query}" now, sir.`;
-      return result;
-    }
-
-    // Intent: send_message
+    // 3. Complex Scenario: Messaging
     const messageMatch = text.match(/^(?:send\s+message|text|message)\s+(?:to\s+)?([\w\s]+?)\s+(?:saying|that)\s+(.+)/i);
     if (messageMatch) {
-      result.intent = "send_message";
-      result.person = messageMatch[1].trim();
-      result.message = messageMatch[2].trim();
-      result.confidence = 0.85;
-      result.response = `Sending that message to ${result.person} for you, sir.`;
+      const person = messageMatch[1].trim();
+      const msg = messageMatch[2].trim();
+      result.plan = [
+        { action: "open_app", target: "whatsapp" },
+        { action: "find_contact", target: person },
+        { action: "send_message", message: msg, person: person }
+      ];
+      result.response = `Preparing to send that message to ${person}, sir.`;
+      result.confidence = 0.95;
       return result;
     }
 
-    // Intent: system_action
-    const systemActions = {
-      "settings": "settings",
-      "control panel": "settings",
-      "shutdown": "shutdown",
-      "restart": "restart",
-      "sleep": "sleep"
-    };
-    if (systemActions[text]) {
-      result.intent = "system_action";
-      result.target = systemActions[text];
-      result.confidence = 1.0;
-      result.response = `Executing system ${result.target} now, sir.`;
+    // 4. Complex Scenario: Search and Play (YouTube)
+    const playMatch = text.match(/^(?:search|find|play)\s+(.+?)\s+(?:on\s+youtube|and\s+play\s+it)/i);
+    if (playMatch) {
+      const query = playMatch[1].trim();
+      result.plan = [
+        { action: "open_app", target: "youtube" },
+        { action: "search_web", query: query, provider: "youtube" },
+        { action: "click_element", target: "first_result" }
+      ];
+      result.response = `Searching for "${query}" on YouTube and playing the first result, sir.`;
+      result.confidence = 0.92;
       return result;
     }
 
-    // Fallback: Chat/Unknown
-    result.intent = "chat";
-    result.query = text;
-    result.confidence = 0.5;
+    // 5. Single Step Fallbacks
+    const openMatch = text.match(/^(?:open|launch|start)\s+(.+)/i);
+    if (openMatch) {
+      result.plan = [{ action: "open_app", target: openMatch[1].trim() }];
+      result.response = `Opening ${openMatch[1].trim()} for you, sir.`;
+      result.confidence = 0.95;
+      return result;
+    }
+
+    const searchMatch = text.match(/^(?:search|google|find)\s+(.+)/i);
+    if (searchMatch) {
+      result.plan = [{ action: "search_web", query: searchMatch[1].trim() }];
+      result.response = `Searching for "${searchMatch[1].trim()}" now, sir.`;
+      result.confidence = 0.9;
+      return result;
+    }
+
+    // Default Chat
+    result.plan = [{ action: "chat", query: text }];
     result.response = "I'm processing that information now, sir.";
+    result.confidence = 0.5;
     return result;
   },
 
   /**
-   * Step 3 & 4: Decide action and execute.
-   * Returns final structured JSON result.
+   * Internal Matcher for App Resolution
    */
-  async handleIntent(intent) {
-    const bridge = window.electronAssistant;
-    if (!bridge) throw new Error('FRIDAY: System bridge unavailable');
-
-    const lastInteraction = memoryStore.getLastInteraction();
-    const currentInput = intent.query || intent.target || "";
-
-    // Memory check: Avoid repeating failures
-    if (lastInteraction && lastInteraction.command === currentInput && lastInteraction.result?.status === "failed") {
-      intent.response = `I still cannot locate ${intent.target} locally, sir. Should I search for it online instead?`;
-      return { status: "failed", intent };
-    }
-
-    let actionResult = { success: false, status: "pending" };
-
-    switch (intent.intent) {
-      case 'open_app': {
-        const target = intent.target.toLowerCase();
-        
-        // 1. Check static map with fuzzy matching
-        let bestStaticMatch = this.findBestMatch(target, Object.keys(APP_MAP), 0.8);
-        if (bestStaticMatch) {
-          const cmd = APP_MAP[bestStaticMatch];
-          if (cmd.startsWith('http')) {
-            await bridge.openExternal(cmd);
-            actionResult = { success: true, status: "completed" };
-          } else {
-            const res = await bridge.executeCommand(cmd);
-            actionResult = { success: res.success, status: res.success ? "completed" : "failed" };
-          }
-          if (actionResult.success) {
-            intent.response = `Opening ${bestStaticMatch} now, sir.`;
-            return { ...actionResult, intent };
-          }
-        }
-
-        // 2. Check scanned apps with fuzzy matching
-        let bestScannedMatch = this.findBestMatch(target, Object.keys(scannedApps), 0.7);
-        if (bestScannedMatch) {
-          const path = scannedApps[bestScannedMatch];
-          const res = await bridge.executeCommand(`start "" "${path}"`);
-          actionResult = { success: res.success, status: res.success ? "completed" : "failed" };
-          if (actionResult.success) {
-            intent.response = `Launching ${bestScannedMatch} for you, sir.`;
-            return { ...actionResult, intent };
-          }
-        }
-
-        // 3. Fallback: Search online if not found
-        intent.response = `I couldn't locate "${intent.target}" locally, sir. Would you like me to search for it online?`;
-        return { success: false, status: "failed", intent };
-      }
-
-      case 'search_web': {
-        const q = encodeURIComponent(intent.query);
-        await bridge.openExternal(`https://google.com/search?q=${q}`);
-        intent.response = `Searching for "${intent.query}" now, sir.`;
-        return { success: true, status: "completed", intent };
-      }
-
-      case 'system_action': {
-        if (intent.target === "settings") {
-          await bridge.executeCommand("start ms-settings:");
-          return { success: true, status: "completed", intent };
-        }
-        intent.response = `I'm sorry sir, I don't have permission for system ${intent.target} yet.`;
-        return { success: false, status: "failed", intent };
-      }
-
-      default:
-        return { success: false, status: "unknown", intent };
-    }
-  },
-
-  findBestMatch(target, list, threshold) {
+  findBestApp(target) {
+    const normalized = target.toLowerCase();
+    
+    // 1. Static Map
     let bestMatch = null;
     let highestScore = 0;
-    for (const item of list) {
-      const score = getSimilarity(target, item);
-      if (score > threshold && score > highestScore) {
+    for (const key of Object.keys(APP_MAP)) {
+      const score = getSimilarity(normalized, key);
+      if (score > 0.8 && score > highestScore) {
         highestScore = score;
-        bestMatch = item;
+        bestMatch = key;
       }
     }
-    return bestMatch;
+    if (bestMatch) return { type: 'map', cmd: APP_MAP[bestMatch], name: bestMatch };
+
+    // 2. Scanned Apps
+    bestMatch = null;
+    highestScore = 0;
+    for (const name of Object.keys(scannedApps)) {
+      const score = getSimilarity(normalized, name);
+      if (score > 0.7 && score > highestScore) {
+        highestScore = score;
+        bestMatch = name;
+      }
+    }
+    if (bestMatch) return { type: 'scanned', cmd: scannedApps[bestMatch], name: bestMatch };
+
+    return null;
   }
 };
 
