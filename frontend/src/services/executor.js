@@ -1,15 +1,26 @@
 /**
  * executor.js (Autonomous Workflow Version)
  * 
- * Handles step-by-step execution of multi-step plans.
+ * Handles step-by-step execution of multi-step plans via Electron bridge.
  */
 
 import { intentService } from './intentService';
+
+// Environment Detection
+const isElectron = !!(window.electron && window.electron.exec);
+
+if (!isElectron) {
+  console.warn("FRIDAY: Running in browser mode — OS execution disabled, sir.");
+}
 
 /**
  * Runs a multi-step workflow plan autonomously.
  */
 export const runWorkflow = async (plan, onStepStart) => {
+  if (!isElectron) {
+    return { success: false, error: "System bridge unavailable. Please run in Electron, sir." };
+  }
+
   const results = [];
   for (let i = 0; i < plan.length; i++) {
     const step = plan[i];
@@ -19,12 +30,10 @@ export const runWorkflow = async (plan, onStepStart) => {
       const result = await executeStep(step);
       results.push(result);
       
-      // If a critical step fails, we stop the workflow
       if (result.status === "failed") {
         return { success: false, error: result.message, results };
       }
       
-      // Small delay between steps for visual feedback and system stability
       await new Promise(r => setTimeout(r, 800));
     } catch (e) {
       console.error(`FRIDAY: Step ${i + 1} failed:`, e);
@@ -35,49 +44,24 @@ export const runWorkflow = async (plan, onStepStart) => {
 };
 
 /**
- * Executes a single action step.
+ * Executes a single action step via window.electron.exec or bridge.
  */
 async function executeStep(step) {
-  const bridge = window.electronAssistant;
   const electron = window.electron;
-  if (!bridge) throw new Error("System bridge unavailable, sir.");
+  const bridge = window.electronAssistant;
+
+  if (!electron || !electron.exec) {
+    return { status: "failed", message: "System bridge unavailable, sir." };
+  }
 
   switch (step.action) {
     case "open_app": {
-      const appMap = {
-        youtube: "start https://youtube.com",
-        whatsapp: "start https://web.whatsapp.com",
-        edge: "start msedge",
-        chrome: "start chrome",
-        vscode: "code",
-        settings: "start ms-settings:"
-      };
-
-      const target = step.target.toLowerCase();
-      const cmd = appMap[target];
-
-      if (cmd) {
-        if (electron && electron.exec) {
-          electron.exec(cmd);
-          return { status: "success", message: `Opening ${step.target}, sir.` };
-        } else {
-          // Fallback to bridge if electron.exec is missing for some reason
-          await bridge.executeCommand(cmd);
-          return { status: "success", message: `Opening ${step.target}, sir.` };
-        }
-      }
-
-      // Fallback to scanned apps if not in static map
       const app = intentService.findBestApp(step.target);
       if (!app) return { status: "failed", message: `I couldn't locate ${step.target} locally, sir.` };
       
-      if (app.type === 'map' && app.cmd.startsWith('http')) {
-        await bridge.openExternal(app.cmd);
-      } else {
-        const res = await bridge.executeCommand(app.cmd);
-        if (!res.success) return { status: "failed", message: `Failed to launch ${app.name}, sir.` };
-      }
-      return { status: "success", message: `Launched ${app.name}.` };
+      // Use real OS execution for all apps
+      electron.exec(app.cmd);
+      return { status: "success", message: `Opening ${app.name}, sir.` };
     }
 
     case "open_folder": {
@@ -114,24 +98,8 @@ async function executeStep(step) {
       const url = step.provider === "youtube" 
         ? `https://www.youtube.com/results?search_query=${encodeURIComponent(step.query)}`
         : `https://www.google.com/search?q=${encodeURIComponent(step.query)}`;
-      await bridge.openExternal(url);
-      return { status: "success", message: `Searched for ${step.query}.` };
-    }
-
-    case "find_contact": {
-      // Placeholder for Puppeteer/Automation logic
-      // For now, we simulate finding the contact in the opened app
-      return { status: "success", message: `Located contact: ${step.target}.` };
-    }
-
-    case "send_message": {
-      // Placeholder for Puppeteer/Automation logic
-      return { status: "success", message: `Message prepared for ${step.person}.` };
-    }
-
-    case "click_element": {
-      // Placeholder for DOM automation logic
-      return { status: "success", message: `Clicked element: ${step.target}.` };
+      electron.exec(`start ${url}`);
+      return { status: "success", message: `Searched for ${step.query}, sir.` };
     }
 
     case "chat": {

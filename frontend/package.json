@@ -12,6 +12,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "electron": "electron ./electron/main.cjs",
+    "start": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && npm run electron\"",
     "electron:dev": "concurrently -k \"vite --host 127.0.0.1 --port 5173\" \"wait-on tcp:5173 && cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron ./electron/main.cjs\"",
     "electron:start": "electron ./electron/main.cjs",
     "build:backend": "python -m PyInstaller --noconfirm --onefile --name cognitive-backend --distpath backend-dist --workpath .pyinstaller/build --specpath .pyinstaller/spec --collect-all fastapi --collect-all starlette --collect-all pydantic --collect-all uvicorn ../server.py",

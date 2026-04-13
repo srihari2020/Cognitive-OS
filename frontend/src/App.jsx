@@ -39,8 +39,14 @@ function AppContent() {
   const scrollRef = useRef(null);
   
   const { backendStatus } = useUI();
+  const isElectron = !!(window.electron && window.electron.exec);
 
   useEffect(() => {
+    if (!isElectron) {
+      setResponses(prev => [...prev, createEntry('SYSTEM ERROR: Bridge unavailable. Please run in Electron.', 'system')]);
+      return;
+    }
+
     // Initialize Intent Service
     intentService.init();
 
@@ -73,6 +79,7 @@ function AppContent() {
   }, []);
 
   const toggleVoice = () => {
+    if (!isElectron) return;
     if (isVoiceListening) {
       voiceService.stop();
     } else {
@@ -91,6 +98,10 @@ function AppContent() {
 
   const handleSendCommand = async (text) => {
     if (!text.trim() || isProcessing) return;
+    if (!isElectron) {
+      setResponses(prev => [...prev, createEntry('Cannot execute: Running in browser mode.', 'system')]);
+      return;
+    }
     
     setIsProcessing(true);
     setAnimationState('PROCESSING');

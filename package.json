@@ -1,0 +1,12 @@
+{
+  "name": "cognitive-os-intelligence",
+  "version": "1.0.0",
+  "description": "Cognitive OS Intelligence Root",
+  "scripts": {
+    "start": "npm --prefix frontend run start",
+    "dev": "npm --prefix frontend run dev",
+    "electron": "npm --prefix frontend run electron"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

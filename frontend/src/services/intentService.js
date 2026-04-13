@@ -1,8 +1,8 @@
 import { memoryStore } from './memoryStore';
 
 const APP_MAP = {
-  "youtube": "https://youtube.com",
-  "whatsapp": "https://web.whatsapp.com",
+  "youtube": "start https://youtube.com",
+  "whatsapp": "start https://web.whatsapp.com",
   "edge": "start msedge",
   "vs code": "code",
   "vscode": "code",
@@ -11,11 +11,17 @@ const APP_MAP = {
   "calculator": "calc",
   "notepad": "notepad",
   "spotify": "start spotify",
-  "yt": "https://youtube.com",
-  "github": "https://github.com"
+  "yt": "start https://youtube.com",
+  "github": "start https://github.com",
+  "explorer": "explorer",
+  "documents": "explorer shell:Personal",
+  "downloads": "explorer shell:Downloads"
 };
 
 let scannedApps = {};
+
+// Environment Detection
+const isElectron = !!(window.electron && window.electron.exec);
 
 /**
  * FRIDAY Intent Service (Autonomous Workflow Version)
@@ -23,6 +29,11 @@ let scannedApps = {};
  */
 export const intentService = {
   async init() {
+    if (!isElectron) {
+      console.warn("FRIDAY: Intent service initialization skipped in browser mode.");
+      return;
+    }
+
     const bridge = window.electronAssistant;
     if (bridge && bridge.scanApps) {
       try {
