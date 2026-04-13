@@ -55,6 +55,36 @@ async function executeStep(step) {
       return { status: "success", message: `Launched ${app.name}.` };
     }
 
+    case "open_folder": {
+      const res = await bridge.openPath(step.target);
+      if (!res.ok) return { status: "failed", message: `I couldn't open ${step.target}, sir.` };
+      return { status: "success", message: `Opened folder: ${step.target}.` };
+    }
+
+    case "set_volume": {
+      const res = await bridge.setVolume(step.target);
+      if (!res.ok) return { status: "failed", message: `Failed to set volume, sir.` };
+      return { status: "success", message: `Volume set to ${step.target}%.` };
+    }
+
+    case "ui_action": {
+      const res = await bridge.uiAction({ action: step.sub_action, target: step.target, x: step.x, y: step.y });
+      if (!res.ok) return { status: "failed", message: res.error };
+      return { status: "success", message: res.message };
+    }
+
+    case "tab_control": {
+      const res = await bridge.tabControl({ action: step.sub_action });
+      if (!res.ok) return { status: "failed", message: res.error };
+      return { status: "success", message: res.message };
+    }
+
+    case "file_action": {
+      const res = await bridge.fileAction({ action: step.sub_action, target: step.target });
+      if (!res.ok) return { status: "failed", message: res.error };
+      return { status: "success", message: res.message };
+    }
+
     case "search_web": {
       const url = step.provider === "youtube" 
         ? `https://www.youtube.com/results?search_query=${encodeURIComponent(step.query)}`

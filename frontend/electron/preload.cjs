@@ -11,8 +11,12 @@ contextBridge.exposeInMainWorld("electronAssistant", {
   launchApp: (appName) => ipcRenderer.invoke("assistant:launch-app", appName),
   setVolume: (level) => ipcRenderer.invoke("assistant:set-volume", level),
   getVolume: () => ipcRenderer.invoke("assistant:get-volume"),
+  getActiveApp: () => ipcRenderer.invoke("assistant:get-active-app"),
   getSystemInfo: () => ipcRenderer.invoke("assistant:get-system-info"),
   hideOverlay: () => ipcRenderer.invoke("assistant:hide-overlay"),
+  uiAction: (payload) => ipcRenderer.invoke("assistant:ui-action", payload),
+  tabControl: (payload) => ipcRenderer.invoke("assistant:tab-control", payload),
+  fileAction: (payload) => ipcRenderer.invoke("assistant:file-action", payload),
   executeCommand: (command) => ipcRenderer.invoke("execute-command", command),
   scanApps: () => ipcRenderer.invoke("scan-apps"),
   onVisibilityChange: (callback) => {

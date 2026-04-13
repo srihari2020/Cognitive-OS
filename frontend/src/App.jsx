@@ -26,6 +26,7 @@ import BackgroundLayer from './components/ui/BackgroundLayer';
 import { intentService } from './services/intentService';
 import { runWorkflow } from './services/executor';
 import { memoryStore } from './services/memoryStore';
+import { proactiveEngine } from './services/proactiveEngine';
 
 function AppContent() {
   const [responses, setResponses] = useState([

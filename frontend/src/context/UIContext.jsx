@@ -4,6 +4,10 @@ import { registerLoop, unregisterLoop, setMetricsFps, subscribeMetrics } from '.
 
 const UIContext = createContext();
 
+import { backgroundService } from '../services/BackgroundService';
+import { aiRouter } from '../services/aiRouter';
+import { commandRouter } from '../services/commandRouter';
+
 export const UIProvider = ({ children }) => {
   const [uiMode, setUiMode] = useState('smart'); // 'cinematic', 'focus', 'smart'
   const [behaviorMode, setBehaviorMode] = useState('active'); // 'idle', 'active', 'processing'
@@ -18,6 +22,63 @@ export const UIProvider = ({ children }) => {
   const [qualityScalar, setQualityScalar] = useState(1);
   const [cleanupSignal, setCleanupSignal] = useState(0);
   const [backendStatus, setBackendStatusInternal] = useState('UNKNOWN');
+  
+  // GOD MODE states
+  const [suggestion, setSuggestion] = useState(null);
+  const [isAutoActionPending, setIsAutoActionPending] = useState(false);
+  const [autoActionTimeout, setAutoActionTimeout] = useState(null);
+  const [notification, setNotification] = useState(null);
+
+  const processCommand = async (command) => {
+    setBehaviorMode('processing');
+    try {
+      const result = await commandRouter.route(command);
+      setNotification({ message: result.message, type: 'success' });
+      return result;
+    } catch (error) {
+      setNotification({ message: 'I encountered an error, sir.', type: 'error' });
+    } finally {
+      setBehaviorMode('active');
+    }
+  };
+
+  const handleProactiveSuggestion = async (sug) => {
+    setSuggestion(sug);
+    
+    if (sug.autoAction) {
+      setIsAutoActionPending(true);
+      const timeout = setTimeout(async () => {
+        setIsAutoActionPending(false);
+        await processCommand(sug.command);
+        setSuggestion(null);
+      }, 5000); // 5s to cancel
+      setAutoActionTimeout(timeout);
+    }
+  };
+
+  const cancelAutoAction = () => {
+    if (autoActionTimeout) {
+      clearTimeout(autoActionTimeout);
+      setAutoActionTimeout(null);
+    }
+    setIsAutoActionPending(false);
+    setSuggestion(null);
+  };
+
+  const handleWakeWordTriggered = () => {
+    console.log('FRIDAY: "Arise" detected.');
+    setNotification({ message: 'Hello sir, ready when you are.', type: 'info' });
+    // Potential voice trigger logic here
+  };
+
+  useEffect(() => {
+    backgroundService.start({
+      onProactiveSuggestion: handleProactiveSuggestion,
+      onWakeWordTriggered: handleWakeWordTriggered
+    });
+
+    return () => backgroundService.stop();
+  }, []);
   
   const fpsRef = useRef([]);
   const lastTimeRef = useRef(performance.now());
@@ -309,7 +370,13 @@ export const UIProvider = ({ children }) => {
     cleanupSignal,
     backendStatus,
     startPerformanceSample,
-    syncAnticipationNow
+    syncAnticipationNow,
+    suggestion,
+    isAutoActionPending,
+    cancelAutoAction,
+    notification,
+    setNotification,
+    processCommand
   };
 
   return <UIContext.Provider value={value}>{children}</UIContext.Provider>;

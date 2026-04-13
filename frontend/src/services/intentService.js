@@ -101,7 +101,61 @@ export const intentService = {
       return result;
     }
 
-    // 5. Single Step Fallbacks
+    // 5. OS/UI Control Actions
+    if (text.includes('scroll down')) {
+      result.plan = [{ action: "ui_action", sub_action: "scroll_down" }];
+      result.confidence = 0.95;
+      result.response = "Scrolling down, sir.";
+      return result;
+    }
+    if (text.includes('scroll up')) {
+      result.plan = [{ action: "ui_action", sub_action: "scroll_up" }];
+      result.confidence = 0.95;
+      result.response = "Scrolling up, sir.";
+      return result;
+    }
+    if (text === 'click' || text === 'click that') {
+      result.plan = [{ action: "ui_action", sub_action: "click" }];
+      result.confidence = 0.9;
+      result.response = "Clicking now, sir.";
+      return result;
+    }
+    if (text.includes('new tab')) {
+      result.plan = [{ action: "tab_control", sub_action: "new_tab" }];
+      result.confidence = 0.95;
+      result.response = "Opening a new tab for you, sir.";
+      return result;
+    }
+    if (text.includes('switch tab') || text.includes('next tab')) {
+      result.plan = [{ action: "tab_control", sub_action: "switch_tab" }];
+      result.confidence = 0.95;
+      result.response = "Switching tabs, sir.";
+      return result;
+    }
+    if (text.includes('close tab')) {
+      result.plan = [{ action: "tab_control", sub_action: "close_tab" }];
+      result.confidence = 0.95;
+      result.response = "Closing the current tab, sir.";
+      return result;
+    }
+
+    // 6. File Actions
+    const zipMatch = text.match(/^(?:zip|compress)\s+(.+)/i);
+    if (zipMatch) {
+      result.plan = [{ action: "file_action", sub_action: "zip", target: zipMatch[1].trim() }];
+      result.confidence = 0.95;
+      result.response = `Zipping "${zipMatch[1].trim()}" for you, sir.`;
+      return result;
+    }
+    const extractMatch = text.match(/^(?:extract|unzip)\s+(.+)/i);
+    if (extractMatch) {
+      result.plan = [{ action: "file_action", sub_action: "extract", target: extractMatch[1].trim() }];
+      result.confidence = 0.95;
+      result.response = `Extracting "${extractMatch[1].trim()}" now, sir.`;
+      return result;
+    }
+
+    // 7. Single Step Fallbacks
     const openMatch = text.match(/^(?:open|launch|start)\s+(.+)/i);
     if (openMatch) {
       result.plan = [{ action: "open_app", target: openMatch[1].trim() }];

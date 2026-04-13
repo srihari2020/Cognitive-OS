@@ -1,6 +1,10 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, session, shell } = require("electron");
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, session, shell, desktopCapturer } = require("electron");
 const path = require("path");
 const { exec, spawn } = require("child_process");
+const robot = require("robotjs");
+
+// Set speed of mouse movements
+robot.setMouseDelay(2);
 
 // Helper to scan for installed apps on Windows
 async function scanInstalledApps() {
@@ -492,6 +496,123 @@ ipcMain.handle("assistant:launch-app", (_event, appName) => {
       });
       child.unref();
       resolve({ ok: true });
+    } catch (error) {
+      resolve({ ok: false, error: error.message });
+    }
+  });
+});
+
+ipcMain.handle("assistant:get-active-app", async () => {
+  return new Promise((resolve) => {
+    try {
+      // Get the title of the foreground window via PowerShell
+      const command = `(Get-Process | Where-Object { $_.MainWindowHandle -eq (Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();' -Name "Win32GetForegroundWindow" -Namespace "Win32Functions" -PassThru)::GetForegroundWindow() }).ProcessName`;
+      
+      const child = spawn("powershell.exe", ["-NoProfile", "-Command", command], {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      let output = "";
+      child.stdout.on("data", (data) => {
+        output += data.toString();
+      });
+
+      child.on("close", () => {
+        resolve(output.trim() || "unknown");
+      });
+    } catch (error) {
+      resolve("unknown");
+    }
+  });
+});
+
+ipcMain.handle("assistant:ui-action", (_event, { action, target, x, y }) => {
+  try {
+    switch (action) {
+      case "click":
+        if (x !== undefined && y !== undefined) {
+          robot.moveMouse(x, y);
+        }
+        robot.mouseClick();
+        return { ok: true, message: "Clicked, sir." };
+      
+      case "scroll_down":
+        robot.scrollMouse(0, -100);
+        return { ok: true, message: "Scrolling down, sir." };
+      
+      case "scroll_up":
+        robot.scrollMouse(0, 100);
+        return { ok: true, message: "Scrolling up, sir." };
+      
+      case "move_mouse":
+        if (x !== undefined && y !== undefined) {
+          robot.moveMouse(x, y);
+          return { ok: true, message: `Moved mouse to ${x}, ${y}, sir.` };
+        }
+        return { ok: false, error: "Coordinates missing" };
+
+      default:
+        return { ok: false, error: `Unknown UI action: ${action}` };
+    }
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("assistant:tab-control", (_event, { action }) => {
+  try {
+    switch (action) {
+      case "new_tab":
+        robot.keyTap("t", "control");
+        return { ok: true, message: "New tab opened, sir." };
+      
+      case "switch_tab":
+        robot.keyTap("tab", "control");
+        return { ok: true, message: "Switched tab, sir." };
+      
+      case "close_tab":
+        robot.keyTap("w", "control");
+        return { ok: true, message: "Tab closed, sir." };
+      
+      default:
+        return { ok: false, error: `Unknown tab action: ${action}` };
+    }
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("assistant:file-action", async (_event, { action, target }) => {
+  if (!target) return { ok: false, error: "No target file/folder specified." };
+  
+  const normalizedTarget = path.isAbsolute(target) ? target : path.join(app.getPath("documents"), target);
+
+  return new Promise((resolve) => {
+    try {
+      let command;
+      switch (action) {
+        case "extract":
+          // powershell Expand-Archive -Path file.zip -DestinationPath ./
+          command = `powershell -Command "Expand-Archive -Path '${normalizedTarget}' -DestinationPath '${path.dirname(normalizedTarget)}' -Force"`;
+          break;
+        
+        case "zip":
+          // powershell Compress-Archive -Path folder -DestinationPath folder.zip
+          command = `powershell -Command "Compress-Archive -Path '${normalizedTarget}' -DestinationPath '${normalizedTarget}.zip' -Force"`;
+          break;
+        
+        default:
+          return resolve({ ok: false, error: `Unknown file action: ${action}` });
+      }
+
+      exec(command, (error, stdout, stderr) => {
+        if (error) {
+          resolve({ ok: false, error: stderr || error.message });
+        } else {
+          resolve({ ok: true, message: `${action === "extract" ? "Extracted" : "Zipped"} successfully, sir.` });
+        }
+      });
     } catch (error) {
       resolve({ ok: false, error: error.message });
     }
