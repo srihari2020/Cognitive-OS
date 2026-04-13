@@ -4,6 +4,7 @@ import { SendIcon, CommandIcon } from './Icons';
 const CommandInput = memo(({
   onSubmit,
   isProcessing,
+  compact = false
 }) => {
   const [value, setValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -20,12 +21,14 @@ const CommandInput = memo(({
   return (
     <form 
       onSubmit={handleSubmit}
-      className={`relative flex items-center gap-3 p-2 rounded-2xl border transition-all duration-500 w-[300px] ${
+      className={`relative flex items-center gap-2 p-1.5 rounded-2xl border transition-all duration-500 ${
+        compact ? 'w-full' : 'w-[300px]'
+      } ${
         isFocused ? 'border-cyan-400/50 bg-cyan-400/5 shadow-[0_0_20px_rgba(0,234,255,0.1)]' : 'border-white/10 bg-white/5'
       }`}
     >
-      <div className="pl-2 opacity-40">
-        <CommandIcon className="w-4 h-4" />
+      <div className="pl-1.5 opacity-40">
+        <CommandIcon className={`w-3.5 h-3.5 ${compact ? 'hidden' : ''}`} />
       </div>
       
       <input
@@ -35,19 +38,21 @@ const CommandInput = memo(({
         onChange={(e) => setValue(e.target.value)}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
-        placeholder="Manual override..."
-        className="flex-1 bg-transparent border-none outline-none text-[13px] font-medium text-white placeholder:text-white/20 tracking-wide"
+        placeholder={compact ? "Type command..." : "Manual override..."}
+        className={`flex-1 bg-transparent border-none outline-none font-medium text-white placeholder:text-white/20 tracking-wide ${
+          compact ? 'text-[11px]' : 'text-[13px]'
+        }`}
         disabled={isProcessing}
       />
 
       <button
         type="submit"
         disabled={!value.trim() || isProcessing}
-        className={`p-2 rounded-xl transition-all duration-300 ${
+        className={`p-1.5 rounded-xl transition-all duration-300 ${
           value.trim() && !isProcessing ? 'bg-cyan-400 text-[#0b0f1a] opacity-100' : 'bg-white/5 text-white/20 opacity-0'
         }`}
       >
-        <SendIcon className="w-4 h-4" />
+        <SendIcon className="w-3.5 h-3.5" />
       </button>
     </form>
   );

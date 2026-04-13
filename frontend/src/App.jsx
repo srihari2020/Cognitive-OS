@@ -36,10 +36,13 @@ function AppContent() {
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [isVoiceSpeaking, setIsVoiceSpeaking] = useState(false);
   const [animationState, setAnimationState] = useState('IDLE');
+  const [isTextMode, setIsTextMode] = useState(false);
   const scrollRef = useRef(null);
   
-  const { backendStatus } = useUI();
+  const { backendStatus, behaviorMode, switchMode } = useUI();
   const isElectron = !!(window.electron && window.electron.exec);
+
+  const isHandyMode = behaviorMode === 'handy';
 
   useEffect(() => {
     if (!isElectron) {
@@ -51,19 +54,13 @@ function AppContent() {
     intentService.init();
 
     // Initialize Voice Service
-    // Removed: voiceService.start(true); - Only start on manual trigger or wake word
-    
-    voiceService.onTranscript = (transcript) => {
-      // Transcript updates are handled here if needed
-    };
-
     voiceService.onResult = (command) => {
       if (command && command.trim().length > 1) {
         handleSendCommand(command);
       }
     };
 
-    voiceService.onStateChange = ({ isListening, isSpeaking, isWoken, isActive }) => {
+    voiceService.onStateChange = ({ isListening, isSpeaking }) => {
       setIsVoiceListening(isListening);
       setIsVoiceSpeaking(isSpeaking);
       if (isListening) setAnimationState('LISTENING');
@@ -78,12 +75,13 @@ function AppContent() {
     };
   }, []);
 
-  const toggleVoice = () => {
+  const handleMicClick = () => {
     if (!isElectron) return;
     if (isVoiceListening) {
       voiceService.stop();
     } else {
       voiceService.start();
+      setIsTextMode(false); // Switch away from text if mic clicked
     }
   };
 
@@ -111,72 +109,57 @@ function AppContent() {
     setResponses(prev => [...prev, userMsg]);
 
     try {
-      // 1. AI Planning Step
-      const planningEntry = createEntry("Planning workflow...", 'system', { isPlanning: true });
+      // 1. AI Planning Step via Gemini
+      const planningEntry = createEntry("Consulting Gemini...", 'system', { isPlanning: true });
       setResponses(prev => [...prev, planningEntry]);
       
-      const planResult = intentService.generatePlan(text);
+      const planResult = await intentService.generatePlan(text);
       
       if (planResult && planResult.plan && planResult.plan.length > 0) {
-        // Voice initial response
+        // Voice initial response (Conversational)
         voiceService.speak(planResult.response);
+        setResponses(prev => [
+          ...prev.filter(r => !r.isPlanning),
+          createEntry(planResult.response, 'assistant')
+        ]);
 
         // 2. Autonomous Execution Layer
         const workflowResult = await runWorkflow(planResult.plan, (current, total, step) => {
-          const stepMsg = `Executing step ${current} of ${total}: ${step.action}...`;
-          setResponses(prev => [
-            ...prev.filter(r => !r.isPlanning),
-            createEntry(stepMsg, 'system', { isPlanning: true })
-          ]);
+          // Silent execution or minimal feedback for natural feel
         });
         
-        // Remove planning indicator
-        setResponses(prev => prev.filter(r => !r.isPlanning));
-
         // 3. Save to Memory
         memoryStore.saveInteraction(text, planResult.plan, workflowResult);
 
-        // 4. Final UI Feedback
-        const finalStatus = workflowResult.success 
-          ? "Workflow completed successfully, sir." 
-          : `I ran into an issue, sir: ${workflowResult.error}`;
-          
-        setResponses(prev => [...prev, createEntry(finalStatus, 'assistant')]);
-        if (workflowResult.success && !planResult.response.includes("completed")) {
-          voiceService.speak("Workflow completed successfully, sir.");
-        } else if (!workflowResult.success) {
-          voiceService.speak("I ran into an issue executing the workflow, sir.");
-        }
       } else {
         setResponses(prev => prev.filter(r => !r.isPlanning));
-        const fallbackMsg = createEntry("I need more clarity on that request, sir.", 'assistant');
-        setResponses(prev => [...prev, fallbackMsg]);
-        voiceService.speak("I need more clarity on that request, sir.");
+        const conversationalResponse = planResult.response || "I'm not quite sure how to help with that, sir.";
+        setResponses(prev => [...prev, createEntry(conversationalResponse, 'assistant')]);
+        voiceService.speak(conversationalResponse);
       }
 
     } catch (error) {
       console.error('Execution error:', error);
-      const errorMsg = createEntry('I encountered an error processing that.', 'assistant');
+      const errorMsg = createEntry('I encountered an error processing that request, sir.', 'assistant');
       setResponses(prev => [...prev, errorMsg]);
+      voiceService.speak("I encountered an error processing that request, sir.");
     } finally {
       setIsProcessing(false);
       if (!isVoiceSpeaking) setAnimationState('IDLE');
     }
   };
 
-  const handleMicClick = () => {
-    if (isVoiceListening) {
-      voiceService.stop();
-    } else {
-      voiceService.start();
-    }
+  const toggleHandyMode = () => {
+    const nextMode = behaviorMode === 'handy' ? 'active' : 'handy';
+    switchMode(nextMode);
   };
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#0b0f1a] flex flex-col items-center">
       <BackgroundLayer />
-      {/* HUD Decorations */}
-      <div className="hud-decoration">
+      
+      {/* HUD Decorations (Static) */}
+      <div className="hud-decoration opacity-20 pointer-events-none">
         <div className="hud-line" style={{ top: '20%' }} />
         <div className="hud-line" style={{ bottom: '20%' }} />
         <div className="hud-line-v" style={{ left: '20%' }} />
@@ -185,24 +168,30 @@ function AppContent() {
         <div className="hud-bracket hud-bracket-tr" />
         <div className="hud-bracket hud-bracket-bl" />
         <div className="hud-bracket hud-bracket-br" />
-        <div className="hud-scanner" />
       </div>
 
-      {/* Main Centered UI */}
-      <div className="center-ui">
+      {/* Main Centered UI (Stable) */}
+      <div className="center-ui flex flex-col items-center justify-center h-full">
         <CoreOrb state={animationState} />
         
-        <div className="flex flex-col items-center gap-4">
+        <div className="flex flex-col items-center gap-8 mt-12">
           <MicButton 
             isListening={isVoiceListening}
             isSpeaking={isVoiceSpeaking}
             isProcessing={isProcessing}
             onClick={handleMicClick}
           />
+          
+          <button 
+            onClick={toggleHandyMode}
+            className="px-6 py-2 rounded-full glass-ui border border-white/10 text-[10px] font-mono text-white/40 hover:text-cyan-400 hover:border-cyan-400/50 transition-all uppercase tracking-widest"
+          >
+            {behaviorMode === 'handy' ? 'Disable Assist Mode' : 'Enable Assist Mode'}
+          </button>
         </div>
       </div>
 
-      {/* Manual Search Fallback (Bottom Right) */}
+      {/* Manual Search (Bottom Right) */}
       <div className="absolute bottom-10 right-10 z-50">
         <CommandInput 
           onSubmit={handleSendCommand} 
@@ -211,10 +200,10 @@ function AppContent() {
       </div>
 
       {/* Message Feed (Lower Left) */}
-      <div className="absolute bottom-10 left-10 w-full max-w-md z-50">
+      <div className="absolute bottom-10 left-10 w-full max-w-md z-50 pointer-events-none">
         <div 
           ref={scrollRef}
-          className="max-h-60 overflow-y-auto no-scrollbar flex flex-col gap-3 px-6"
+          className="max-h-60 overflow-y-auto no-scrollbar flex flex-col gap-3 px-6 pointer-events-auto"
         >
           <AnimatePresence mode="popLayout">
             {responses.slice(-5).map((res) => (

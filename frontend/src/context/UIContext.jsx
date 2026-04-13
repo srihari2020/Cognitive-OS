@@ -10,7 +10,7 @@ import { commandRouter } from '../services/commandRouter';
 
 export const UIProvider = ({ children }) => {
   const [uiMode, setUiMode] = useState('smart'); // 'cinematic', 'focus', 'smart'
-  const [behaviorMode, setBehaviorMode] = useState('active'); // 'idle', 'active', 'processing'
+  const [behaviorMode, setBehaviorMode] = useState('active'); // 'idle', 'active', 'processing', 'handy'
   const [intensity, setIntensity] = useState(1);
   const [fps, setFps] = useState(120);
   const [isUserActive, setIsUserActive] = useState(false);
@@ -30,15 +30,36 @@ export const UIProvider = ({ children }) => {
   const [notification, setNotification] = useState(null);
 
   const processCommand = async (command) => {
+    const prevMode = behaviorMode;
     setBehaviorMode('processing');
     try {
       const result = await commandRouter.route(command);
       setNotification({ message: result.message, type: 'success' });
+      
+      // Auto transition to handy mode if we launched an app or url
+      const isLaunchAction = /(open|launch|start|search|google|youtube|whatsapp)/i.test(command);
+      if (isLaunchAction && prevMode !== 'handy') {
+        setTimeout(() => {
+          setBehaviorMode('handy');
+          if (window.electronAssistant && window.electronAssistant.setMode) {
+            window.electronAssistant.setMode('handy');
+          }
+        }, 1500);
+      } else {
+        setBehaviorMode(prevMode);
+      }
+      
       return result;
     } catch (error) {
       setNotification({ message: 'I encountered an error, sir.', type: 'error' });
-    } finally {
-      setBehaviorMode('active');
+      setBehaviorMode(prevMode);
+    }
+  };
+
+  const switchMode = (mode) => {
+    setBehaviorMode(mode);
+    if (window.electronAssistant && window.electronAssistant.setMode) {
+      window.electronAssistant.setMode(mode);
     }
   };
 
@@ -376,7 +397,8 @@ export const UIProvider = ({ children }) => {
     cancelAutoAction,
     notification,
     setNotification,
-    processCommand
+    processCommand,
+    switchMode
   };
 
   return <UIContext.Provider value={value}>{children}</UIContext.Provider>;

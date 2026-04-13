@@ -5,7 +5,7 @@ import anime from 'animejs/lib/anime.es.js';
  * FRIDAY Mic Button
  * Large circular button with anime.js animated waves.
  */
-const MicButton = memo(({ isListening, isSpeaking, isProcessing, onClick }) => {
+const MicButton = memo(({ isListening, isSpeaking, isProcessing, onClick, compact = false }) => {
   const wave1Ref = useRef(null);
   const wave2Ref = useRef(null);
   const buttonRef = useRef(null);
@@ -59,9 +59,12 @@ const MicButton = memo(({ isListening, isSpeaking, isProcessing, onClick }) => {
     };
   }, [isListening, isSpeaking, isProcessing]);
 
+  const sizeClass = compact ? 'w-14 h-14' : 'w-20 h-20';
+  const iconSize = compact ? '24' : '32';
+
   return (
-    <div className="relative flex flex-col items-center gap-6 mt-8">
-      <div className="relative w-20 h-20">
+    <div className={`relative flex flex-col items-center ${compact ? 'gap-3 mt-2' : 'gap-6 mt-8'}`}>
+      <div className={`relative ${sizeClass}`}>
         {/* Animated Background Waves */}
         <div 
           ref={wave1Ref}
@@ -81,7 +84,7 @@ const MicButton = memo(({ isListening, isSpeaking, isProcessing, onClick }) => {
             isProcessing ? 'border-purple-500 bg-purple-500/20' : 'border-white/10 hover:border-white/30'
           }`}
         >
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={isListening ? 'text-cyan-400' : 'text-white'}>
+          <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={isListening ? 'text-cyan-400' : 'text-white'}>
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
             <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
             <line x1="12" x2="12" y1="19" y2="22" />
@@ -90,9 +93,11 @@ const MicButton = memo(({ isListening, isSpeaking, isProcessing, onClick }) => {
       </div>
       
       {/* Helper Text */}
-      <div className={`text-[10px] font-mono tracking-[0.2em] text-cyan-400 uppercase transition-opacity duration-300 ${isListening ? 'opacity-100' : 'opacity-40'}`}>
-        {isListening ? 'Listening...' : isProcessing ? 'Processing...' : 'Click to Speak'}
-      </div>
+      {!compact && (
+        <div className={`text-[10px] font-mono tracking-[0.2em] text-cyan-400 uppercase transition-opacity duration-300 ${isListening ? 'opacity-100' : 'opacity-40'}`}>
+          {isListening ? 'Listening...' : isProcessing ? 'Processing...' : 'Click to Speak'}
+        </div>
+      )}
     </div>
   );
 });

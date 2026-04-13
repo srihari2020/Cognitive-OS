@@ -86,6 +86,7 @@ const MODE_SIZES = {
   idle: { width: 1200, height: 800 },
   active: { width: 1200, height: 800 },
   processing: { width: 1200, height: 800 },
+  handy: { width: 320, height: 500 },
   overlay: { width: 440, height: 160 },
 };
 
@@ -193,9 +194,24 @@ function applyMode(mode) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const size = MODE_SIZES[mode] || MODE_SIZES.active;
   currentMode = mode;
-  mainWindow.setResizable(true);
-  mainWindow.setAlwaysOnTop(false);
-  mainWindow.center();
+
+  if (mode === "handy") {
+    const display = screen.getPrimaryDisplay();
+    const { width: screenWidth, height: screenHeight } = display.workAreaSize;
+    const margin = 20;
+    
+    mainWindow.setResizable(true); // Temporarily allow resize to set size
+    mainWindow.setSize(size.width, size.height, true);
+    mainWindow.setPosition(screenWidth - size.width - margin, screenHeight - size.height - margin, true);
+    mainWindow.setAlwaysOnTop(true, "floating");
+    mainWindow.setResizable(false);
+  } else {
+    mainWindow.setResizable(true);
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setSize(size.width, size.height, true);
+    mainWindow.center();
+  }
+  
   updateClickThroughState();
 }
 

@@ -1,4 +1,5 @@
-import { memoryStore } from './memoryStore';
+import { geminiService } from './geminiService';
+import { backgroundService } from './BackgroundService';
 
 const APP_MAP = {
   "youtube": "start https://youtube.com",
@@ -24,8 +25,8 @@ let scannedApps = {};
 const isElectron = !!(window.electron && window.electron.exec);
 
 /**
- * FRIDAY Intent Service (Autonomous Workflow Version)
- * Generates multi-step plans for complex tasks.
+ * FRIDAY Intent Service (AI-Driven Version)
+ * Uses Gemini as the primary brain, with a fallback pattern matcher.
  */
 export const intentService = {
   async init() {
@@ -46,216 +47,76 @@ export const intentService = {
   },
 
   /**
-   * AI Planning Step: Converts user input into a multi-step workflow plan.
+   * Generates a plan by consulting the Gemini Brain.
    */
-  generatePlan(input) {
-    const text = (input || '').trim().toLowerCase();
-    if (!text) return null;
-
-    // Default response structure
-    const result = {
-      plan: [],
-      response: "I'm planning that workflow for you now, sir.",
-      confidence: 0
+  async generatePlan(text) {
+    const currentState = backgroundService.getState();
+    const context = {
+      activeApp: currentState.activeApp,
+      idleTime: currentState.idleTime
     };
 
-    // 1. Memory-based reuse
-    if (text === 'send it again' || text === 'do it again' || text === 'repeat last') {
-      const lastAction = memoryStore.getLastInteraction();
-      if (lastAction && lastAction.plan) {
-        return { 
-          plan: lastAction.plan, 
-          response: "Repeating the last workflow for you, sir.",
-          confidence: 1.0 
+    try {
+      // 1. Ask Gemini for intent and natural response
+      const geminiResult = await geminiService.ask(text, context);
+      
+      if (geminiResult && geminiResult.plan) {
+        return {
+          plan: geminiResult.plan,
+          response: geminiResult.response,
+          confidence: 0.9,
+          thought: geminiResult.thought
         };
+      }
+    } catch (e) {
+      console.error("Gemini Brain failure, falling back to local patterns:", e);
+    }
+
+    // 2. Local Fallback Pattern Matcher (Safety Net)
+    return this.fallbackMatcher(text);
+  },
+
+  fallbackMatcher(text) {
+    const input = text.toLowerCase().trim();
+    const result = {
+      plan: [],
+      confidence: 0,
+      response: "I'll handle that for you, sir.",
+      thought: "Using local pattern matching fallback."
+    };
+
+    // Simple pattern matching for core commands
+    if (input.includes('open') || input.includes('launch')) {
+      const appName = input.replace(/(open|launch)/, '').trim();
+      if (appName) {
+        result.plan = [{ action: "open_app", target: appName }];
+        result.confidence = 0.8;
+        result.response = `Opening ${appName} for you, sir.`;
+      }
+    } else if (input.includes('search')) {
+      const query = input.replace('search', '').trim();
+      if (query) {
+        result.plan = [{ action: "search_web", query: query, provider: "google" }];
+        result.confidence = 0.8;
+        result.response = `Searching for ${query} on Google, sir.`;
       }
     }
 
-    // 2. Complex Scenario: Coding Setup
-    if (text.includes('coding setup') || text.includes('setup for work')) {
-      result.plan = [
-        { action: "open_app", target: "vscode" },
-        { action: "open_app", target: "chrome" },
-        { action: "open_app", target: "github" }
-      ];
-      result.response = "Initializing your coding environment now, sir.";
-      result.confidence = 0.98;
-      return result;
-    }
-
-    // 3. Complex Scenario: Messaging
-    const messageMatch = text.match(/^(?:send\s+message|text|message)\s+(?:to\s+)?([\w\s]+?)\s+(?:saying|that)\s+(.+)/i);
-    if (messageMatch) {
-      const person = messageMatch[1].trim();
-      const msg = messageMatch[2].trim();
-      result.plan = [
-        { action: "open_app", target: "whatsapp" },
-        { action: "find_contact", target: person },
-        { action: "send_message", message: msg, person: person }
-      ];
-      result.response = `Preparing to send that message to ${person}, sir.`;
-      result.confidence = 0.95;
-      return result;
-    }
-
-    // 4. Complex Scenario: Search and Play (YouTube)
-    const playMatch = text.match(/^(?:search|find|play)\s+(.+?)\s+(?:on\s+youtube|and\s+play\s+it)/i);
-    if (playMatch) {
-      const query = playMatch[1].trim();
-      result.plan = [
-        { action: "open_app", target: "youtube" },
-        { action: "search_web", query: query, provider: "youtube" },
-        { action: "click_element", target: "first_result" }
-      ];
-      result.response = `Searching for "${query}" on YouTube and playing the first result, sir.`;
-      result.confidence = 0.92;
-      return result;
-    }
-
-    // 5. OS/UI Control Actions
-    if (text.includes('scroll down')) {
-      result.plan = [{ action: "ui_action", sub_action: "scroll_down" }];
-      result.confidence = 0.95;
-      result.response = "Scrolling down, sir.";
-      return result;
-    }
-    if (text.includes('scroll up')) {
-      result.plan = [{ action: "ui_action", sub_action: "scroll_up" }];
-      result.confidence = 0.95;
-      result.response = "Scrolling up, sir.";
-      return result;
-    }
-    if (text === 'click' || text === 'click that') {
-      result.plan = [{ action: "ui_action", sub_action: "click" }];
-      result.confidence = 0.9;
-      result.response = "Clicking now, sir.";
-      return result;
-    }
-    if (text.includes('new tab')) {
-      result.plan = [{ action: "tab_control", sub_action: "new_tab" }];
-      result.confidence = 0.95;
-      result.response = "Opening a new tab for you, sir.";
-      return result;
-    }
-    if (text.includes('switch tab') || text.includes('next tab')) {
-      result.plan = [{ action: "tab_control", sub_action: "switch_tab" }];
-      result.confidence = 0.95;
-      result.response = "Switching tabs, sir.";
-      return result;
-    }
-    if (text.includes('close tab')) {
-      result.plan = [{ action: "tab_control", sub_action: "close_tab" }];
-      result.confidence = 0.95;
-      result.response = "Closing the current tab, sir.";
-      return result;
-    }
-
-    // 6. File Actions
-    const zipMatch = text.match(/^(?:zip|compress)\s+(.+)/i);
-    if (zipMatch) {
-      result.plan = [{ action: "file_action", sub_action: "zip", target: zipMatch[1].trim() }];
-      result.confidence = 0.95;
-      result.response = `Zipping "${zipMatch[1].trim()}" for you, sir.`;
-      return result;
-    }
-    const extractMatch = text.match(/^(?:extract|unzip)\s+(.+)/i);
-    if (extractMatch) {
-      result.plan = [{ action: "file_action", sub_action: "extract", target: extractMatch[1].trim() }];
-      result.confidence = 0.95;
-      result.response = `Extracting "${extractMatch[1].trim()}" now, sir.`;
-      return result;
-    }
-
-    // 7. Single Step Fallbacks
-    const openMatch = text.match(/^(?:open|launch|start)\s+(.+)/i);
-    if (openMatch) {
-      result.plan = [{ action: "open_app", target: openMatch[1].trim() }];
-      result.response = `Opening ${openMatch[1].trim()} for you, sir.`;
-      result.confidence = 0.95;
-      return result;
-    }
-
-    const searchMatch = text.match(/^(?:search|google|find)\s+(.+)/i);
-    if (searchMatch) {
-      result.plan = [{ action: "search_web", query: searchMatch[1].trim() }];
-      result.response = `Searching for "${searchMatch[1].trim()}" now, sir.`;
-      result.confidence = 0.9;
-      return result;
-    }
-
-    // Default Chat
-    result.plan = [{ action: "chat", query: text }];
-    result.response = "I'm processing that information now, sir.";
-    result.confidence = 0.5;
     return result;
   },
 
-  /**
-   * Internal Matcher for App Resolution
-   */
   findBestApp(target) {
-    const normalized = target.toLowerCase();
+    const name = target.toLowerCase().trim();
     
     // 1. Static Map
-    let bestMatch = null;
-    let highestScore = 0;
-    for (const key of Object.keys(APP_MAP)) {
-      const score = getSimilarity(normalized, key);
-      if (score > 0.8 && score > highestScore) {
-        highestScore = score;
-        bestMatch = key;
-      }
-    }
-    if (bestMatch) return { type: 'map', cmd: APP_MAP[bestMatch], name: bestMatch };
+    if (APP_MAP[name]) return { name: target, cmd: APP_MAP[name], type: 'map' };
 
     // 2. Scanned Apps
-    bestMatch = null;
-    highestScore = 0;
-    for (const name of Object.keys(scannedApps)) {
-      const score = getSimilarity(normalized, name);
-      if (score > 0.7 && score > highestScore) {
-        highestScore = score;
-        bestMatch = name;
+    for (const [appName, appPath] of Object.entries(scannedApps)) {
+      if (appName.toLowerCase().includes(name)) {
+        return { name: appName, cmd: `"${appPath}"`, type: 'scanned' };
       }
     }
-    if (bestMatch) return { type: 'scanned', cmd: scannedApps[bestMatch], name: bestMatch };
-
     return null;
   }
 };
-
-// Fuzzy Matching Helpers (Levenshtein)
-function getSimilarity(s1, s2) {
-  let longer = s1;
-  let shorter = s2;
-  if (s1.length < s2.length) {
-    longer = s2;
-    shorter = s1;
-  }
-  const longerLength = longer.length;
-  if (longerLength === 0) return 1.0;
-  return (longerLength - editDistance(longer, shorter)) / parseFloat(longerLength);
-}
-
-function editDistance(s1, s2) {
-  s1 = s1.toLowerCase();
-  s2 = s2.toLowerCase();
-  const costs = [];
-  for (let i = 0; i <= s1.length; i++) {
-    let lastValue = i;
-    for (let j = 0; j <= s2.length; j++) {
-      if (i === 0) {
-        costs[j] = j;
-      } else if (j > 0) {
-        let newValue = costs[j - 1];
-        if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
-          newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
-        }
-        costs[j - 1] = lastValue;
-        lastValue = newValue;
-      }
-    }
-    if (i > 0) costs[s2.length] = lastValue;
-  }
-  return costs[s2.length];
-}
