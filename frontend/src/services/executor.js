@@ -13,6 +13,18 @@ if (!isElectron) {
   console.warn("FRIDAY: Running in browser mode — OS execution disabled, sir.");
 }
 
+// GLOBAL EXECUTION LOCK (MOST IMPORTANT)
+let USER_TRIGGER = false;
+
+/**
+ * Explicitly unlocks the next execution.
+ * MUST be called from a user-initiated event handler.
+ */
+export function allowExecution() {
+  USER_TRIGGER = true;
+  console.log("🔒 Execution UNLOCKED by user trigger.");
+}
+
 // Execution throttling to prevent duplicate triggers
 let isExecuting = false;
 
@@ -24,12 +36,20 @@ export const runWorkflow = async (plan, onStepStart) => {
     return { success: false, error: "System bridge unavailable. Please run in Electron, sir." };
   }
 
+  // GLOBAL LOCK CHECK
+  if (!USER_TRIGGER) {
+    console.warn("🚫 BLOCKED execution attempt without user trigger.");
+    return { success: false, error: "Unauthorized execution path blocked." };
+  }
+
   // Throttle: prevent duplicate execution
   if (isExecuting) {
     console.log("Execution already in progress, skipping duplicate request");
     return { success: false, error: "Already executing a command" };
   }
 
+  // Consume the trigger
+  USER_TRIGGER = false;
   isExecuting = true;
 
   try {

@@ -4,6 +4,8 @@
  * Single Instance Voice Controller for FRIDAY.
  */
 
+import { allowExecution } from './executor';
+
 let recognition = null;
 let isListening = false;
 
@@ -31,6 +33,7 @@ class VoiceService {
         
         // Wake word check
         if (text.includes("arise")) {
+          allowExecution(); // 🔥 Unlock execution for the next command
           this.speak("Hello sir, how can I help you?");
           return;
         }

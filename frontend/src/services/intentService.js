@@ -64,6 +64,12 @@ const isElectron = !!(window.electron && window.electron.exec);
  */
 export const intentService = {
   async init() {
+    // 🚫 BACKGROUND SCANNING DISABLED: Only runs on user action
+    if (!window.ALLOW_BACKGROUND) {
+      console.log("🚫 Background init blocked (user action required)");
+      return;
+    }
+
     if (!isElectron) {
       console.warn("FRIDAY: Intent service initialization skipped in browser mode.");
       return;
@@ -80,13 +86,17 @@ export const intentService = {
       }
     }
 
-    // SCAN IN BACKGROUND (non-blocking)
-    setTimeout(() => {
-      this.scanAppsInBackground();
-    }, 2000);
+    // 🚫 BACKGROUND SCAN DISABLED: No automatic scanning
+    // Scan only happens when user triggers a command
   },
 
   async scanAppsInBackground() {
+    // 🚫 BACKGROUND SCANNING DISABLED: Only runs on user action
+    if (!window.ALLOW_BACKGROUND) {
+      console.log("🚫 Background scan blocked (user action required)");
+      return;
+    }
+
     const bridge = window.electronAssistant;
     if (!bridge || !bridge.scanApps) return;
 
@@ -119,6 +129,12 @@ export const intentService = {
     // 🚫 STOP EMPTY/INVALID INPUT: Block auto-calls with no content
     if (!text || text.trim() === "") {
       console.log("🚫 Blocked empty command execution");
+      return { intent: "chat", plan: [], response: "", confidence: 0, source: "blocked" };
+    }
+
+    // 🚫 BACKGROUND INTENT GENERATION DISABLED: Only runs on user action
+    if (!window.ALLOW_BACKGROUND) {
+      console.log("🚫 Intent generation blocked (user action required)");
       return { intent: "chat", plan: [], response: "", confidence: 0, source: "blocked" };
     }
 

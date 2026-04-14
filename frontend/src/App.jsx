@@ -24,7 +24,7 @@ import CommandInput from './components/ui/CommandInput';
 import BackgroundLayer from './components/ui/BackgroundLayer';
 
 import { intentService } from './services/intentService';
-import { runWorkflow } from './services/executor';
+import { runWorkflow, allowExecution } from './services/executor';
 import { memoryStore } from './services/memoryStore';
 import { proactiveEngine } from './services/proactiveEngine';
 
@@ -69,6 +69,9 @@ function AppContent() {
   const isElectron = !!(window.electron && window.electron.exec);
 
   useEffect(() => {
+    // 🚫 DISABLE ALL BACKGROUND OPERATIONS BY DEFAULT
+    window.ALLOW_BACKGROUND = false;
+
     // CLEAN STARTUP: Clear any old state
     localStorage.removeItem("lastCommand");
     localStorage.removeItem("pendingCommand");
@@ -79,7 +82,7 @@ function AppContent() {
       return;
     }
 
-    // Initialize Intent Service (non-blocking)
+    // Initialize Intent Service (will be blocked by ALLOW_BACKGROUND flag)
     intentService.init();
 
     // Initialize Voice Service
@@ -111,6 +114,8 @@ function AppContent() {
       voiceService.stop();
     } else {
       setIsUserTriggered(true); // Mark as user-triggered
+      window.ALLOW_BACKGROUND = true; // Enable for voice command
+      allowExecution(); // 🔥 Unlock execution for the upcoming command
       voiceService.start();
     }
   };
@@ -131,14 +136,19 @@ function AppContent() {
       return;
     }
 
-    if (!text.trim() || isProcessing) {
+    if (!text || text.trim() === "" || isProcessing) {
       setIsUserTriggered(false);
       return;
     }
+
+    // ✅ ENABLE BACKGROUND OPERATIONS ONLY DURING USER ACTION
+    window.ALLOW_BACKGROUND = true;
+    allowExecution(); // 🔥 Unlock execution for this specific command
     
     if (!isElectron) {
       setResponses(prev => [...prev, createEntry('Cannot execute: Running in browser mode.', 'system')]);
       setIsUserTriggered(false);
+      window.ALLOW_BACKGROUND = false;
       return;
     }
     
@@ -167,6 +177,9 @@ function AppContent() {
       // Silent failure — log only, no error shown to user
       console.log("FRIDAY: Execution error (silent):", error.message);
     } finally {
+      // 🚫 DISABLE BACKGROUND OPERATIONS AFTER USER ACTION COMPLETES
+      window.ALLOW_BACKGROUND = false;
+      
       setIsProcessing(false);
       setIsUserTriggered(false); // Reset flag after execution
       if (!isVoiceSpeaking) setAnimationState('IDLE');
