@@ -56,7 +56,7 @@ class GeminiProvider {
   constructor(apiKey) {
     this.apiKey = apiKey;
     this.name = 'Gemini';
-    this.baseUrl = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
+    this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
   }
 
   async sendMessage(messages, options = {}) {

@@ -50,34 +50,42 @@ let updateCheckStarted = false;
 // Helper Functions
 // ==========================================
 
-// Helper to scan for installed apps on Windows
+// Helper to scan for installed apps on Windows (optimized with depth limit)
 async function scanInstalledApps() {
   log.info("Scanning for applications...");
+  
+  // Return cached if available and recent (less than 1 hour old)
+  if (cachedApps && Object.keys(cachedApps).length > 0) {
+    const cacheAge = Date.now() - (cachedApps._timestamp || 0);
+    if (cacheAge < 3600000) { // 1 hour
+      log.info(`Using cached apps (${Object.keys(cachedApps).length} apps)`);
+      return cachedApps;
+    }
+  }
+
   const apps = new Map();
   const searchPaths = [
     "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs",
     path.join(process.env.APPDATA, "Microsoft\\Windows\\Start Menu\\Programs"),
-    "C:\\Program Files",
-    "C:\\Program Files (x86)"
   ];
 
-  const scanDir = async (dir) => {
+  const scanDir = async (dir, depth = 0) => {
+    // Limit recursion depth to prevent deep scanning
+    if (depth > 3) return;
+    
     try {
-      if (!await fsPromises.access(dir).then(() => true).catch(() => false)) return; // Check if directory exists
+      if (!await fsPromises.access(dir).then(() => true).catch(() => false)) return;
       const files = await fsPromises.readdir(dir, { withFileTypes: true });
+      
       for (const file of files) {
         const fullPath = path.join(dir, file.name);
         if (file.isDirectory()) {
-          await scanDir(fullPath); // Recursively scan subdirectories
+          await scanDir(fullPath, depth + 1);
         } else if (file.isFile()) {
           if (file.name.endsWith(".lnk")) {
-            // For .lnk files, we might need to resolve the target. This is complex in Node.js
-            // and often requires native modules or external tools. For simplicity, we'll
-            // just use the .lnk name for now, or skip if a direct .exe is preferred.
-            // A more robust solution would involve parsing the .lnk file.
             const name = path.basename(file.name, ".lnk").toLowerCase();
             if (!apps.has(name)) {
-              apps.set(name, fullPath); // Store .lnk path
+              apps.set(name, fullPath);
             }
           } else if (file.name.endsWith(".exe")) {
             const name = path.basename(file.name, ".exe").toLowerCase();
@@ -88,7 +96,7 @@ async function scanInstalledApps() {
         }
       }
     } catch (e) {
-      // log.warn(`Could not scan directory ${dir}: ${e.message}`);
+      // Silently skip inaccessible directories
     }
   };
 
@@ -97,7 +105,8 @@ async function scanInstalledApps() {
   }
 
   const result = Object.fromEntries(apps);
-  cachedApps = result; // Cache the results
+  result._timestamp = Date.now(); // Add timestamp for cache validation
+  cachedApps = result;
   log.info(`Found ${Object.keys(cachedApps).length} applications.`);
   return cachedApps;
 }
@@ -235,7 +244,8 @@ function updateClickThroughState() {
 function createMainWindow() {
   const preloadPath = path.join(__dirname, "preload.cjs");
   const iconPath = getIconPath();
-  log.info("Creating main window (safe config)");
+  log.info("Creating main window");
+  
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -248,6 +258,7 @@ function createMainWindow() {
     alwaysOnTop: false,
     skipTaskbar: false,
     resizable: true,
+    fullscreen: false,
     show: false,
     backgroundColor: "#090b11",
     icon: iconPath,
@@ -262,9 +273,6 @@ function createMainWindow() {
   });
 
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.setVisibleOnAllWorkspaces(false);
-  mainWindow.setAlwaysOnTop(false);
-  mainWindow.setIgnoreMouseEvents(false);
   mainWindow.center();
 
   if (app.isPackaged) {

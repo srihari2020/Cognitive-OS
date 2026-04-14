@@ -35,9 +35,8 @@ export const commandRouter = {
       }
       return { handled: true, message: aiResponse.response || "Action completed, sir." };
     } catch (error) {
-      console.error("FRIDAY: Command routing error:", error);
-      voiceService.speak("I encountered an error processing that request, sir.");
-      return { handled: false, message: `I encountered an error processing that request, sir: ${error.message}` };
+      console.log("FRIDAY: Command routing error (silent):", error.message);
+      return { handled: false, message: "" };
     }
   }
 };

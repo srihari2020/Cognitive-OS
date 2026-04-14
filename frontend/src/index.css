@@ -41,6 +41,7 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
+    width: 100%;
     height: 100vh;
     background: linear-gradient(180deg, #0b0f1a, #0e1424);
     scroll-behavior: smooth;
@@ -83,6 +84,7 @@
   }
 
   #root {
+    width: 100%;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -304,6 +306,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 30px;
     z-index: 100;
     width: 100%;

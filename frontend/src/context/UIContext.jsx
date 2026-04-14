@@ -64,17 +64,10 @@ export const UIProvider = ({ children }) => {
   };
 
   const handleProactiveSuggestion = async (sug) => {
+    // DISABLED: No auto-execution, only show suggestion
+    console.log("Proactive suggestion (display only, no auto-exec):", sug);
     setSuggestion(sug);
-    
-    if (sug.autoAction) {
-      setIsAutoActionPending(true);
-      const timeout = setTimeout(async () => {
-        setIsAutoActionPending(false);
-        await processCommand(sug.command);
-        setSuggestion(null);
-      }, 5000); // 5s to cancel
-      setAutoActionTimeout(timeout);
-    }
+    // Auto-action completely disabled
   };
 
   const cancelAutoAction = () => {
@@ -93,12 +86,14 @@ export const UIProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    backgroundService.start({
-      onProactiveSuggestion: handleProactiveSuggestion,
-      onWakeWordTriggered: handleWakeWordTriggered
-    });
+    // DISABLED: BackgroundService can suggest but NOT auto-execute
+    // backgroundService.start({
+    //   onProactiveSuggestion: handleProactiveSuggestion,
+    //   onWakeWordTriggered: handleWakeWordTriggered
+    // });
+    console.log("App ready — no auto actions, user-triggered only");
 
-    return () => backgroundService.stop();
+    // return () => backgroundService.stop();
   }, []);
   
   const fpsRef = useRef([]);

@@ -42,6 +42,7 @@ function AppContent() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [thinkingMessage, setThinkingMessage] = useState('Thinking...');
+  const [isUserTriggered, setIsUserTriggered] = useState(false);
   const scrollRef = useRef(null);
   
   const thinkingMessages = [
@@ -68,17 +69,23 @@ function AppContent() {
   const isElectron = !!(window.electron && window.electron.exec);
 
   useEffect(() => {
+    // CLEAN STARTUP: Clear any old state
+    localStorage.removeItem("lastCommand");
+    localStorage.removeItem("pendingCommand");
+    localStorage.removeItem("autoExecute");
+
     if (!isElectron) {
       setResponses(prev => [...prev, createEntry('SYSTEM ERROR: Bridge unavailable. Please run in Electron.', 'system')]);
       return;
     }
 
-    // Initialize Intent Service
+    // Initialize Intent Service (non-blocking)
     intentService.init();
 
     // Initialize Voice Service
     voiceService.onResult = (command) => {
       if (command && command.trim().length > 1) {
+        setIsUserTriggered(true); // Voice input is user-triggered
         handleSendCommand(command);
       }
     };
@@ -103,6 +110,7 @@ function AppContent() {
     if (isVoiceListening) {
       voiceService.stop();
     } else {
+      setIsUserTriggered(true); // Mark as user-triggered
       voiceService.start();
     }
   };
@@ -117,9 +125,20 @@ function AppContent() {
   }, [responses]);
 
   const handleSendCommand = async (text) => {
-    if (!text.trim() || isProcessing) return;
+    // 🚫 BLOCK ALL AUTO COMMANDS: Only user-triggered actions allowed
+    if (!isUserTriggered) {
+      console.log("🚫 Blocked auto-execution attempt:", text);
+      return;
+    }
+
+    if (!text.trim() || isProcessing) {
+      setIsUserTriggered(false);
+      return;
+    }
+    
     if (!isElectron) {
       setResponses(prev => [...prev, createEntry('Cannot execute: Running in browser mode.', 'system')]);
+      setIsUserTriggered(false);
       return;
     }
     
@@ -131,46 +150,31 @@ function AppContent() {
     setResponses(prev => [...prev, userMsg]);
 
     try {
-      // 1. AI Planning Step via Gemini/Grok
       const planResult = await intentService.generatePlan(text);
       
-      if (planResult) {
-        // Voice initial response (Conversational)
-        if (planResult.response) {
-          voiceService.speak(planResult.response);
-          setResponses(prev => [
-            ...prev,
-            createEntry(planResult.response, 'assistant')
-          ]);
-        }
+      if (planResult && planResult.response) {
+        voiceService.speak(planResult.response);
+        setResponses(prev => [...prev, createEntry(planResult.response, 'assistant')]);
+      }
 
-        // 2. Autonomous Execution Layer
-        if (planResult.plan && planResult.plan.length > 0) {
-          console.log("Executing plan:", planResult.plan);
-          await runWorkflow(planResult.plan);
-          // 3. Save to Memory
-          memoryStore.saveInteraction(text, planResult.plan, { success: true });
-        }
-
-      } else {
-        const fallback = "I'm having trouble processing that, sir. Please try again.";
-        setResponses(prev => [...prev, createEntry(fallback, 'assistant')]);
-        voiceService.speak(fallback);
+      if (planResult && planResult.plan && planResult.plan.length > 0) {
+        console.log("Executing plan:", planResult.plan);
+        await runWorkflow(planResult.plan);
+        memoryStore.saveInteraction(text, planResult.plan, { success: true });
       }
 
     } catch (error) {
-      console.error('FRIDAY: Execution error:', error);
-      const errorMsg = error.message || 'I encountered an error processing that request, sir.';
-      setResponses(prev => [...prev, createEntry(errorMsg, 'assistant')]);
-      voiceService.speak(errorMsg);
+      // Silent failure — log only, no error shown to user
+      console.log("FRIDAY: Execution error (silent):", error.message);
     } finally {
       setIsProcessing(false);
+      setIsUserTriggered(false); // Reset flag after execution
       if (!isVoiceSpeaking) setAnimationState('IDLE');
     }
   };
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-[#0b0f1a] flex flex-col items-center">
+    <div className="relative w-full h-screen overflow-x-hidden overflow-y-hidden bg-[#0b0f1a] flex flex-col items-center">
       <BackgroundLayer />
       
       {/* HUD Decorations */}
@@ -186,7 +190,7 @@ function AppContent() {
       </div>
 
       {/* Main Centered UI */}
-      <div className="center-ui flex flex-col items-center justify-center h-full">
+      <div className="center-ui">
         <CoreOrb state={animationState} />
         
         <div className="flex flex-col items-center gap-8 mt-12">
@@ -216,10 +220,13 @@ function AppContent() {
         </div>
       </div>
 
-      {/* Manual Search */}
-      <div className="absolute bottom-10 right-24 z-50">
+      {/* Manual Search - Fixed positioning */}
+      <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 z-50">
         <CommandInput 
-          onSubmit={handleSendCommand} 
+          onSubmit={(text) => {
+            setIsUserTriggered(true); // Typing is user-triggered
+            handleSendCommand(text);
+          }} 
           isProcessing={isProcessing} 
         />
       </div>
@@ -229,7 +236,10 @@ function AppContent() {
         isOpen={isChatOpen}
         onClose={setIsChatOpen}
         responses={responses}
-        onSendCommand={handleSendCommand}
+        onSendCommand={(text) => {
+          setIsUserTriggered(true); // Chat input is user-triggered
+          handleSendCommand(text);
+        }}
         isProcessing={isProcessing}
         isVoiceListening={isVoiceListening}
         isVoiceSpeaking={isVoiceSpeaking}

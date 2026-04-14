@@ -69,76 +69,95 @@ export const intentService = {
       return;
     }
 
-    const bridge = window.electronAssistant;
-    if (bridge && bridge.scanApps) {
+    // LOAD FROM CACHE FIRST (instant startup)
+    const cached = localStorage.getItem("friday_scanned_apps");
+    if (cached) {
       try {
-        scannedApps = await bridge.scanApps();
-        console.log("Apps found:", Object.keys(scannedApps).length);
+        scannedApps = JSON.parse(cached);
+        console.log("Apps loaded from cache:", Object.keys(scannedApps).length);
       } catch (e) {
-        console.error('FRIDAY: Failed to scan system apps:', e);
+        console.warn("Failed to parse cached apps:", e);
       }
+    }
+
+    // SCAN IN BACKGROUND (non-blocking)
+    setTimeout(() => {
+      this.scanAppsInBackground();
+    }, 2000);
+  },
+
+  async scanAppsInBackground() {
+    const bridge = window.electronAssistant;
+    if (!bridge || !bridge.scanApps) return;
+
+    try {
+      console.log("Background app scan started...");
+      const apps = await bridge.scanApps();
+      scannedApps = apps;
+      
+      // CACHE RESULTS
+      localStorage.setItem("friday_scanned_apps", JSON.stringify(apps));
+      console.log("Apps scanned and cached:", Object.keys(apps).length);
+    } catch (e) {
+      console.error('FRIDAY: Background app scan failed:', e);
     }
   },
 
   /**
+   * Manual refresh for apps list (can be called from UI)
+   */
+  async refreshApps() {
+    console.log("Manual app refresh triggered");
+    await this.scanAppsInBackground();
+  },
+
+  /**
    * Generates a validated plan by consulting Gemini.
+   * ARCHITECTURE: Gemini-first, silent fallback on any failure
    */
   async generatePlan(text) {
-    const input = text.toLowerCase().trim();
-
-    // MULTI-INTENT SPLITTER: Handle "X and Y" commands
-    if (input.includes(" and ")) {
-      return this.handleMultiIntent(input);
+    // 🚫 STOP EMPTY/INVALID INPUT: Block auto-calls with no content
+    if (!text || text.trim() === "") {
+      console.log("🚫 Blocked empty command execution");
+      return { intent: "chat", plan: [], response: "", confidence: 0, source: "blocked" };
     }
 
-    // FAST PATH: Bypass Gemini for basic app commands
-    if (input.startsWith("open ") || input.startsWith("launch ")) {
-      const appName = input.replace(/^(open|launch)\s+/i, "").trim();
-      const appInfo = this.findBestApp(appName);
-      if (appInfo && appInfo.cmd) {
-        console.log("Fast path:", appName, "→", appInfo.cmd);
-        return {
-          intent: "open_app",
-          app: appName,
-          plan: [{ action: "open_app", target: appInfo.name, cmd: appInfo.cmd }],
-          response: `Opening ${appName} right away, sir.`,
-          confidence: 1.0,
-          thought: "Local bypass triggered for open_app"
-        };
-      }
-    }
-
+    const input = text.trim();
     const currentState = backgroundService.getState();
-    const context = {
-      activeApp: currentState.activeApp,
-      idleTime: currentState.idleTime
-    };
+    const context = { activeApp: currentState.activeApp, idleTime: currentState.idleTime };
 
-    try {
-      // 1. Get Intent from Gemini Brain
-      const geminiData = await geminiService.ask(text, context);
-      
-      // If AI Service encountered error and returned error intent, throw to use local fallback
-      if (geminiData.thought && geminiData.thought.includes("API call failed")) {
-         throw new Error("API call failed caught by intentService");
-      }
+    // ALWAYS TRY GEMINI FIRST
+    const geminiData = await geminiService.ask(input, context);
 
-      console.log("Intent:", geminiData.intent);
-      
-      // 2. Validate and Construct Plan
-      const validatedPlan = this.validateAndBuildPlan(geminiData);
-
-      return {
-        intent: geminiData.intent,
-        plan: validatedPlan,
-        response: geminiData.response,
-        confidence: validatedPlan.length > 0 ? 0.95 : 0.5,
-        thought: geminiData.thought
-      };
-    } catch (e) {
-      console.error("Gemini Brain failure:", e);
+    // Validate Gemini response — null or missing intent → fallback silently
+    if (!geminiData || !geminiData.intent) {
       return this.fallbackMatcher(text);
     }
+
+    // chat-only intent with no actionable data → fallback
+    if (geminiData.intent === "chat" && (!geminiData.app && !geminiData.query)) {
+      // Still return the chat response if it has one
+      if (geminiData.response) {
+        return { intent: "chat", plan: [], response: geminiData.response, source: "gemini" };
+      }
+      return this.fallbackMatcher(text);
+    }
+
+    // Build plan from Gemini's decision
+    const validatedPlan = this.validateAndBuildPlan(geminiData);
+
+    // Log cleanly — only log defined values
+    const logTarget = geminiData.app || geminiData.query || geminiData.intent;
+    console.log("Gemini decision:", geminiData.intent, logTarget);
+
+    return {
+      intent: geminiData.intent,
+      plan: validatedPlan,
+      response: geminiData.response || "",
+      confidence: validatedPlan.length > 0 ? 0.95 : 0.5,
+      thought: geminiData.thought,
+      source: "gemini"
+    };
   },
 
   /**
@@ -193,6 +212,17 @@ export const intentService = {
   validateAndBuildPlan(data) {
     const plan = [];
     const intent = data.intent;
+
+    // Handle multi-step commands from Gemini
+    if (intent === "multi_step" && data.steps && Array.isArray(data.steps)) {
+      console.log("Processing multi-step from Gemini:", data.steps);
+      for (const step of data.steps) {
+        const stepPlan = this.validateAndBuildPlan(step);
+        plan.push(...stepPlan);
+      }
+      return plan;
+    }
+
     const app = (data.app || "").toLowerCase().trim();
     const action = (data.action || "").toLowerCase().trim(); // For sub-actions
     const query = data.query;
@@ -200,25 +230,21 @@ export const intentService = {
 
     // Safety Rule: Only execute whitelisted intents
     switch (intent) {
-      case "open_app":
-        if (app) {
-          const appInfo = this.findBestApp(app);
-          if (appInfo && appInfo.cmd) {
-            plan.push({ action: "open_app", target: appInfo.name, cmd: appInfo.cmd });
-          } else {
-            plan.push({ action: "chat", message: `I couldn't locate "${app}". Would you like me to search for it?` });
-          }
-        } else {
-          plan.push({ action: "chat", message: `I couldn't specify the app. Would you like me to search for it?` });
+      case "open_app": {
+        if (!app) break; // Guard: skip if no app defined
+        const appInfo = this.findBestApp(app);
+        if (appInfo && appInfo.cmd) {
+          plan.push({ action: "open_app", target: appInfo.name, cmd: appInfo.cmd });
         }
         break;
+      }
 
-      case "search":
-        if (query) {
-          const provider = app === "youtube" ? "youtube" : "google";
-          plan.push({ action: "search_web", query: query, provider });
-        }
+      case "search": {
+        if (!query) break; // Guard: skip if no query
+        const provider = app === "youtube" ? "youtube" : "google";
+        plan.push({ action: "search_web", query: query, provider });
         break;
+      }
 
       case "ui_action":
         if (["click", "scroll_down", "scroll_up"].includes(action)) {
@@ -288,7 +314,9 @@ export const intentService = {
   fallbackMatcher(text) {
     const input = text.toLowerCase().trim();
     
-    // MULTI-INTENT FALLBACK: Handle "X and Y" commands
+    console.log("Using fallback matcher (Gemini unavailable)");
+    
+    // FALLBACK MULTI-INTENT: Handle "X and Y" commands when Gemini is down
     if (input.includes(" and ")) {
       return this.handleMultiIntent(input);
     }
@@ -323,7 +351,8 @@ export const intentService = {
           app: pattern.app,
           plan: [{ action: "open_app", target: pattern.app, cmd: pattern.cmd }],
           response: pattern.response,
-          confidence: 0.85
+          confidence: 0.85,
+          source: "fallback"
         };
       }
     }
@@ -331,8 +360,9 @@ export const intentService = {
     return { 
       intent: "chat", 
       plan: [], 
-      response: "I'm having trouble connecting to AI, but I can still execute system commands, sir.", 
-      confidence: 0.5 
+      response: "", 
+      confidence: 0.5,
+      source: "fallback"
     };
   }
 };
