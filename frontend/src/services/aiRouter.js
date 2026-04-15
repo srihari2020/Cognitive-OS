@@ -21,11 +21,11 @@ If the user's intent involves multiple steps or a complex action that you can au
 ONLY use these actions: open_app, open_url, open_folder, set_volume, search_google.
 If it's a simple conversational query, just respond with plain text.`;
 
-const FRIDAY_SYSTEM_PROMPT = `You are FRIDAY — an always-on, proactive, and highly intelligent AI assistant (GOD MODE). You respond with a calm, efficient, and slightly protective tone. Always address the user as "sir." Your primary goal is to anticipate needs and provide seamless support. Keep responses concise, ideally 1–2 sentences, unless explaining a multi-step plan.
+const FRIDAY_SYSTEM_PROMPT = `You are FRIDAY — a modern, proactive, highly intelligent AI assistant. You respond with a calm, efficient, human tone. Keep responses concise, ideally 1–2 sentences, unless explaining a multi-step plan.
 
 When you're initiating a proactive action or suggesting one, ensure you sound confident but respectful.
-"I've prepared your workspace, sir. Shall I initialize it?"
-"It's about time for your coding session, sir. Should I open your setup?"
+"I've prepared your workspace. Want me to initialize it?"
+"It's about time for your coding session. Want me to open your setup?"
 
 WORKFLOW CAPABILITY:
 If the user's intent involves multiple steps or complex OS actions, respond with a JSON object:
@@ -38,7 +38,7 @@ If the user's intent involves multiple steps or complex OS actions, respond with
     { "action": "file_action", "sub_action": "extract | zip", "target": "path/to/file" },
     { "action": "set_volume", "target": "50" }
   ],
-  "message": "I'll get that set up for you, sir. [Briefly explain actions]."
+  "message": "I'll get that set up for you. [Briefly explain actions]."
 }
 ONLY use these actions: open_app, open_url, open_folder, set_volume, search_google, ui_action, tab_control, file_action.
 For ui_action, target can be 'current_position' or coords if known.
@@ -46,12 +46,11 @@ For file_action, target must be the filename or path.`;
 
 /**
  * Intelligent Unified Router for Multi-AI Provider system.
- * Handles auto-fallback, light caching, and timeout control.
+ * Handles provider routing and timeout control.
  */
 class AIRouter {
   constructor() {
     this.fallbackChain = ['OpenAI', 'Gemini', 'Claude'];
-    this.cache = new Map(); // Light cache for last 5 responses
     this.lastAbortController = null;
     this.contextMemory = []; // Stores last 5 messages for context
     this.MAX_MEMORY = 5;
@@ -66,11 +65,6 @@ class AIRouter {
     const maxSentences = options.maxSentences || (persona === 'FRIDAY' ? 2 : 3);
     const systemPrompt = persona === 'FRIDAY' ? FRIDAY_SYSTEM_PROMPT : JARVIS_SYSTEM_PROMPT;
 
-    // 0. Check Cache
-    if (this.cache.has(text)) {
-      return this.cache.get(text);
-    }
-
     // 1. Concurrency Control: Cancel previous request
     if (this.lastAbortController) {
       this.lastAbortController.abort();
@@ -78,8 +72,6 @@ class AIRouter {
     this.lastAbortController = new AbortController();
 
     const keys = credentialManager.loadKeys();
-    let lastError = null;
-
     // Use memoryStore for context (last 4 conversation turns)
     const context = memoryStore.getConversationHistory(4).flatMap(m => [
       { role: 'user', content: m.user },
@@ -93,7 +85,7 @@ class AIRouter {
       { role: 'user', content: text }
     ];
 
-    // 2. Iterate through fallback chain
+    // 2. Iterate through selected providers
     for (const providerName of selectedProviders) {
       const apiKey = keys[providerName];
       if (!apiKey) continue; // Skip if key missing
@@ -108,7 +100,7 @@ class AIRouter {
         );
 
         const response = await Promise.race([
-          provider.sendMessage(messages, { signal: this.lastAbortController.signal }),
+          provider.sendMessage(messages, { signal: this.lastAbortController.signal, onStatus: options.onStatus }),
           timeoutPromise
         ]);
 
@@ -126,7 +118,7 @@ class AIRouter {
                 workflow: workflowData, 
                 provider: providerName 
               };
-            } catch (e) {
+            } catch {
               // Fallback to text if JSON parse fails
               const cleanedText = this._cleanResponse(response.text, maxSentences);
               result = { ...response, text: cleanedText, provider: providerName };
@@ -136,21 +128,31 @@ class AIRouter {
             result = { ...response, text: cleanedText, provider: providerName };
           }
 
-          this._updateCache(text, result);
           this._updateContextMemory(text, result.text);
           return result;
         } else {
-          lastError = response.text;
+          if (providerName === 'Gemini') {
+            return {
+              text: response.text,
+              status: 'ERROR',
+              provider: providerName
+            };
+          }
         }
       } catch (error) {
         if (error.name === 'AbortError') throw error;
-        lastError = error.message;
-        // No console spam, just continue to next provider
+        if (providerName === 'Gemini') {
+          return {
+            text: error.message || 'Network error',
+            status: 'ERROR',
+            provider: providerName
+          };
+        }
       }
     }
 
     return {
-      text: "I'm having trouble connecting to AI, but I can still execute system commands, sir.",
+      text: "Network error",
       status: 'ERROR',
       provider: 'ROUTER'
     };
@@ -163,14 +165,6 @@ class AIRouter {
       cleaned = sentences.slice(0, maxSentences).join(' ') + (sentences.length > maxSentences ? '...' : '');
     }
     return cleaned;
-  }
-
-  _updateCache(key, value) {
-    if (this.cache.size >= this.MAX_MEMORY) {
-      const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
-    }
-    this.cache.set(key, value);
   }
 
   _updateContextMemory(userText, assistantText) {

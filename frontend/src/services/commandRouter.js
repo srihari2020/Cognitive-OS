@@ -17,14 +17,14 @@ export const commandRouter = {
       const aiResponse = await intentService.generatePlan(input);
 
       if (!aiResponse || !aiResponse.intent) {
-        return { handled: true, message: aiResponse.response || "I'm not sure how to interpret that, sir." };
+        return { handled: true, message: aiResponse.response || "I’m not sure how to interpret that." };
       }
 
       // 2. Execute based on validated intent
       if (aiResponse.plan && aiResponse.plan.length > 0) {
         const executionResult = await runWorkflow(aiResponse.plan);
         if (!executionResult.success) {
-          voiceService.speak(`I encountered an issue during execution: ${executionResult.error}`);
+          voiceService.speak(`I hit an issue during execution: ${executionResult.error}`);
           return { handled: false, message: `Execution failed: ${executionResult.error}` };
         }
       }
@@ -33,10 +33,9 @@ export const commandRouter = {
       if (aiResponse.intent === "chat") {
         return { handled: true, message: aiResponse.response };
       }
-      return { handled: true, message: aiResponse.response || "Action completed, sir." };
+      return { handled: true, message: aiResponse.response || "Action completed." };
     } catch (error) {
-      console.log("FRIDAY: Command routing error (silent):", error.message);
-      return { handled: false, message: "" };
+      return { handled: false, message: error.message || "Network error" };
     }
   }
 };

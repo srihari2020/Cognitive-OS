@@ -1,16 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import CoreOrb from './components/ui/CoreOrb';
 import MicButton from './components/ui/MicButton';
 import MessageCard from './components/ui/MessageCard';
-import { commandService } from './services/api';
 import { UIProvider, useUI } from './context/UIContext';
 import { voiceService } from './services/voiceService';
-import { motion, AnimatePresence } from 'framer-motion';
-
-const INITIAL_FEATURE_FLAGS = {
-  enableSuggestions: true,
-  enableOrbAnimation: true,
-};
+import CommandInput from './components/ui/CommandInput';
+import BackgroundLayer from './components/ui/BackgroundLayer';
+import { intentService } from './services/intentService';
+import { runWorkflow, allowExecution } from './services/executor';
+import { memoryStore } from './services/memoryStore';
+import ChatWidget from './components/ui/ChatWidget';
+import SettingsPanel from './components/ui/SettingsPanel';
 
 const createEntry = (text, role = 'assistant', extra = {}) => ({
   id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -19,17 +20,15 @@ const createEntry = (text, role = 'assistant', extra = {}) => ({
   ...extra,
 });
 
-import CommandInput from './components/ui/CommandInput';
+const THINKING_MESSAGES = [
+  'Thinking...',
+  'Analyzing your request...',
+  'Working on it...',
+  'Checking the response...',
+  'Processing...',
+];
 
-import BackgroundLayer from './components/ui/BackgroundLayer';
-
-import { intentService } from './services/intentService';
-import { runWorkflow, allowExecution } from './services/executor';
-import { memoryStore } from './services/memoryStore';
-import { proactiveEngine } from './services/proactiveEngine';
-
-import ChatWidget from './components/ui/ChatWidget';
-import SettingsPanel from './components/ui/SettingsPanel';
+const MotionDiv = motion.div;
 
 function AppContent() {
   const [responses, setResponses] = useState([
@@ -42,83 +41,45 @@ function AppContent() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [thinkingMessage, setThinkingMessage] = useState('Thinking...');
-  const [isUserTriggered, setIsUserTriggered] = useState(false);
   const scrollRef = useRef(null);
-  
-  const thinkingMessages = [
-    "Thinking...",
-    "Analyzing your request...",
-    "Consulting systems...",
-    "One moment, sir...",
-    "Processing..."
-  ];
+  const isProcessingRef = useRef(false);
+  const activeInputRef = useRef('');
 
   useEffect(() => {
     let interval;
     if (isProcessing) {
-      let i = 0;
+      let index = 0;
       interval = setInterval(() => {
-        setThinkingMessage(thinkingMessages[i % thinkingMessages.length]);
-        i++;
+        setThinkingMessage(THINKING_MESSAGES[index % THINKING_MESSAGES.length]);
+        index += 1;
       }, 2000);
     }
     return () => clearInterval(interval);
   }, [isProcessing]);
 
-  const { backendStatus, behaviorMode, switchMode } = useUI();
+  const { backendStatus } = useUI();
   const isElectron = !!(window.electron && window.electron.exec);
 
-  useEffect(() => {
-    // 🚫 DISABLE ALL BACKGROUND OPERATIONS BY DEFAULT
-    window.ALLOW_BACKGROUND = false;
+  const clearCommandState = useCallback(() => {
+    activeInputRef.current = '';
+    localStorage.removeItem('lastCommand');
+    localStorage.removeItem('pendingCommand');
+    localStorage.removeItem('autoExecute');
+  }, []);
 
-    // CLEAN STARTUP: Clear any old state
-    localStorage.removeItem("lastCommand");
-    localStorage.removeItem("pendingCommand");
-    localStorage.removeItem("autoExecute");
+  const handleMicClick = useCallback(() => {
+    if (!isElectron) return;
+    if (isProcessingRef.current) return;
 
-    if (!isElectron) {
-      setResponses(prev => [...prev, createEntry('SYSTEM ERROR: Bridge unavailable. Please run in Electron.', 'system')]);
+    if (isVoiceListening) {
+      voiceService.stop();
       return;
     }
 
-    // Initialize Intent Service (will be blocked by ALLOW_BACKGROUND flag)
-    intentService.init();
-
-    // Initialize Voice Service
-    voiceService.onResult = (command) => {
-      if (command && command.trim().length > 1) {
-        setIsUserTriggered(true); // Voice input is user-triggered
-        handleSendCommand(command);
-      }
-    };
-
-    voiceService.onStateChange = ({ isListening, isSpeaking }) => {
-      setIsVoiceListening(isListening);
-      setIsVoiceSpeaking(isSpeaking);
-      if (isListening) setAnimationState('LISTENING');
-      else if (isSpeaking) setAnimationState('SPEAKING');
-      else if (isProcessing) setAnimationState('PROCESSING');
-      else setAnimationState('IDLE');
-    };
-
-    return () => {
-      voiceService.stop();
-      voiceService.cancel();
-    };
-  }, []);
-
-  const handleMicClick = () => {
-    if (!isElectron) return;
-    if (isVoiceListening) {
-      voiceService.stop();
-    } else {
-      setIsUserTriggered(true); // Mark as user-triggered
-      window.ALLOW_BACKGROUND = true; // Enable for voice command
-      allowExecution(); // 🔥 Unlock execution for the upcoming command
-      voiceService.start();
-    }
-  };
+    window.ALLOW_BACKGROUND = true;
+    allowExecution();
+    voiceService.start();
+  }, [isElectron, isVoiceListening]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -129,68 +90,125 @@ function AppContent() {
     }
   }, [responses]);
 
-  const handleSendCommand = async (text) => {
-    // 🚫 BLOCK ALL AUTO COMMANDS: Only user-triggered actions allowed
+  const handleSendCommand = useCallback(async (text, options = {}) => {
+    const normalizedInput = (text || '').trim();
+    const isUserTriggered = options.userTriggered === true;
+
     if (!isUserTriggered) {
-      console.log("🚫 Blocked auto-execution attempt:", text);
       return;
     }
 
-    if (!text || text.trim() === "" || isProcessing) {
-      setIsUserTriggered(false);
+    if (!normalizedInput) {
       return;
     }
 
-    // ✅ ENABLE BACKGROUND OPERATIONS ONLY DURING USER ACTION
+    if (isProcessingRef.current) {
+      return;
+    }
+
+    if (activeInputRef.current === normalizedInput) {
+      return;
+    }
+
+    isProcessingRef.current = true;
+    activeInputRef.current = normalizedInput;
+    localStorage.setItem('pendingCommand', normalizedInput);
+    localStorage.setItem('lastCommand', normalizedInput);
+
     window.ALLOW_BACKGROUND = true;
-    allowExecution(); // 🔥 Unlock execution for this specific command
-    
+    allowExecution();
+
     if (!isElectron) {
-      setResponses(prev => [...prev, createEntry('Cannot execute: Running in browser mode.', 'system')]);
-      setIsUserTriggered(false);
+      setResponses((prev) => [...prev, createEntry('Cannot execute in browser mode.', 'system')]);
+      isProcessingRef.current = false;
+      setIsProcessing(false);
       window.ALLOW_BACKGROUND = false;
+      clearCommandState();
       return;
     }
-    
+
     setIsProcessing(true);
     setAnimationState('PROCESSING');
-    
-    // Add user message
-    const userMsg = createEntry(text, 'user');
-    setResponses(prev => [...prev, userMsg]);
+    setResponses((prev) => [...prev, createEntry(normalizedInput, 'user')]);
 
     try {
-      const planResult = await intentService.generatePlan(text);
-      
-      if (planResult && planResult.response) {
+      const planResult = await intentService.generatePlan(normalizedInput, {
+        onStatus: (statusMessage) => {
+          setResponses((prev) => {
+            const lastMessage = prev[prev.length - 1];
+            if (lastMessage?.role === 'system' && lastMessage?.text === statusMessage) {
+              return prev;
+            }
+            return [...prev, createEntry(statusMessage, 'system')];
+          });
+        },
+      });
+
+      if (planResult?.response) {
         voiceService.speak(planResult.response);
-        setResponses(prev => [...prev, createEntry(planResult.response, 'assistant')]);
+        setResponses((prev) => [...prev, createEntry(planResult.response, 'assistant')]);
       }
 
-      if (planResult && planResult.plan && planResult.plan.length > 0) {
-        console.log("Executing plan:", planResult.plan);
+      if (planResult?.plan?.length > 0) {
         await runWorkflow(planResult.plan);
-        memoryStore.saveInteraction(text, planResult.plan, { success: true });
+        memoryStore.saveInteraction(normalizedInput, planResult.plan, { success: true });
       }
-
     } catch (error) {
-      // Silent failure — log only, no error shown to user
-      console.log("FRIDAY: Execution error (silent):", error.message);
+      const message = error?.message || 'Network error';
+      setResponses((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage?.role === 'system' && lastMessage?.text === message) {
+          return prev;
+        }
+        return [...prev, createEntry(message, 'system')];
+      });
     } finally {
-      // 🚫 DISABLE BACKGROUND OPERATIONS AFTER USER ACTION COMPLETES
       window.ALLOW_BACKGROUND = false;
-      
+      isProcessingRef.current = false;
       setIsProcessing(false);
-      setIsUserTriggered(false); // Reset flag after execution
-      if (!isVoiceSpeaking) setAnimationState('IDLE');
+      clearCommandState();
+      if (!isVoiceSpeaking) {
+        setAnimationState('IDLE');
+      }
     }
-  };
+  }, [clearCommandState, isElectron, isVoiceSpeaking]);
+
+  useEffect(() => {
+    window.ALLOW_BACKGROUND = false;
+    clearCommandState();
+
+    if (!isElectron) {
+      setResponses((prev) => [...prev, createEntry('System bridge unavailable. Run this in Electron.', 'system')]);
+      return undefined;
+    }
+
+    intentService.init();
+
+    voiceService.onResult = (command) => {
+      handleSendCommand(command, { userTriggered: true, source: 'voice' });
+    };
+
+    voiceService.onStateChange = ({ isListening, isSpeaking }) => {
+      setIsVoiceListening(isListening);
+      setIsVoiceSpeaking(isSpeaking);
+      if (isListening) setAnimationState('LISTENING');
+      else if (isSpeaking) setAnimationState('SPEAKING');
+      else if (isProcessingRef.current) setAnimationState('PROCESSING');
+      else setAnimationState('IDLE');
+    };
+
+    return () => {
+      voiceService.onResult = null;
+      voiceService.onStateChange = null;
+      voiceService.stop();
+      voiceService.cancel();
+    };
+  }, [clearCommandState, handleSendCommand, isElectron]);
 
   return (
     <div className="relative w-full h-screen overflow-x-hidden overflow-y-hidden bg-[#0b0f1a] flex flex-col items-center">
       <BackgroundLayer />
-      
-      {/* HUD Decorations */}
+
       <div className="hud-decoration opacity-20 pointer-events-none">
         <div className="hud-line" style={{ top: '20%' }} />
         <div className="hud-line" style={{ bottom: '20%' }} />
@@ -202,29 +220,28 @@ function AppContent() {
         <div className="hud-bracket hud-bracket-br" />
       </div>
 
-      {/* Main Centered UI */}
       <div className="center-ui">
         <CoreOrb state={animationState} />
-        
+
         <div className="flex flex-col items-center gap-8 mt-12">
           {isProcessing && (
-            <motion.div 
+            <MotionDiv
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               className="text-cyan-400/60 font-mono text-[10px] uppercase tracking-[0.3em] animate-pulse"
             >
               {thinkingMessage}
-            </motion.div>
+            </MotionDiv>
           )}
-          
-          <MicButton 
+
+          <MicButton
             isListening={isVoiceListening}
             isSpeaking={isVoiceSpeaking}
             isProcessing={isProcessing}
             onClick={handleMicClick}
           />
-          
-          <button 
+
+          <button
             onClick={() => setIsSettingsOpen(true)}
             className="px-6 py-2 rounded-full glass-ui border border-white/10 text-[10px] font-mono text-white/40 hover:text-cyan-400 hover:border-cyan-400/50 transition-all uppercase tracking-widest"
           >
@@ -233,26 +250,18 @@ function AppContent() {
         </div>
       </div>
 
-      {/* Manual Search - Fixed positioning */}
       <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 z-50">
-        <CommandInput 
-          onSubmit={(text) => {
-            setIsUserTriggered(true); // Typing is user-triggered
-            handleSendCommand(text);
-          }} 
-          isProcessing={isProcessing} 
+        <CommandInput
+          onSubmit={(text) => handleSendCommand(text, { userTriggered: true, source: 'input' })}
+          isProcessing={isProcessing}
         />
       </div>
 
-      {/* Floating ChatWidget */}
-      <ChatWidget 
+      <ChatWidget
         isOpen={isChatOpen}
         onClose={setIsChatOpen}
         responses={responses}
-        onSendCommand={(text) => {
-          setIsUserTriggered(true); // Chat input is user-triggered
-          handleSendCommand(text);
-        }}
+        onSendCommand={(text) => handleSendCommand(text, { userTriggered: true, source: 'chat' })}
         isProcessing={isProcessing}
         isVoiceListening={isVoiceListening}
         isVoiceSpeaking={isVoiceSpeaking}
@@ -261,36 +270,33 @@ function AppContent() {
         thinkingMessage={thinkingMessage}
       />
 
-      {/* Settings Panel */}
-      <SettingsPanel 
+      <SettingsPanel
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
       />
 
-      {/* Message Feed (Legacy, only show in full UI) */}
       {!isChatOpen && (
         <div className="absolute bottom-10 left-10 w-full max-w-md z-50 pointer-events-none">
-          <div 
+          <div
             ref={scrollRef}
             className="max-h-60 overflow-y-auto no-scrollbar flex flex-col gap-3 px-6 pointer-events-auto"
           >
             <AnimatePresence mode="popLayout">
               {responses.slice(-5).map((res) => (
-                <motion.div
+                <MotionDiv
                   key={res.id}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                 >
                   <MessageCard role={res.role} content={res.text} />
-                </motion.div>
+                </MotionDiv>
               ))}
             </AnimatePresence>
           </div>
         </div>
       )}
 
-      {/* System Status */}
       <div className="absolute top-6 right-8 flex items-center gap-4 glass-ui p-3 rounded-xl border-white/5 pointer-events-none">
         <div className="flex flex-col items-end">
           <span className="text-[9px] font-mono tracking-widest text-white/40 uppercase">System Status</span>

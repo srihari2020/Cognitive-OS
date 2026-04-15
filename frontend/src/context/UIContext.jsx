@@ -34,7 +34,7 @@ export const UIProvider = ({ children }) => {
     setBehaviorMode('processing');
     try {
       const result = await commandRouter.route(command);
-      setNotification({ message: result.message, type: 'success' });
+      setNotification({ message: result.message, type: result.handled === false ? 'error' : 'success' });
       
       // Auto transition to handy mode if we launched an app or url
       const isLaunchAction = /(open|launch|start|search|google|youtube|whatsapp)/i.test(command);
@@ -51,7 +51,7 @@ export const UIProvider = ({ children }) => {
       
       return result;
     } catch (error) {
-      setNotification({ message: 'I encountered an error, sir.', type: 'error' });
+      setNotification({ message: error?.message || 'Something went wrong.', type: 'error' });
       setBehaviorMode(prevMode);
     }
   };
@@ -81,7 +81,7 @@ export const UIProvider = ({ children }) => {
 
   const handleWakeWordTriggered = () => {
     console.log('FRIDAY: "Arise" detected.');
-    setNotification({ message: 'Hello sir, ready when you are.', type: 'info' });
+    setNotification({ message: 'Ready when you are.', type: 'info' });
     // Potential voice trigger logic here
   };
 
