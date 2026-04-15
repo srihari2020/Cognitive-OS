@@ -4,11 +4,24 @@
  * Central AI Brain for FRIDAY conversation and intent generation.
  */
 
+import { credentialManager, GroqProvider } from './aiProviders.js';
+
 const RETRY_DELAY_MS = 1000;
 const MAX_503_ATTEMPTS = 2;
 const RATE_LIMIT_DELAY_MS = 2000;
 const MAX_429_ATTEMPTS = 2;
-const THROTTLE_MS = 1500;
+const THROTTLE_MS = 2000;
+
+const SIMPLE_LOCAL_RESPONSES = {
+  hi: 'Hey.',
+  hello: 'Hello.',
+  hey: 'Hey.',
+  ok: 'Okay.',
+  okay: 'Okay.',
+  thanks: 'Anytime.',
+  thankyou: 'Anytime.',
+  'thank you': 'Anytime.',
+};
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -20,18 +33,33 @@ class GeminiService {
     this.requestChain = Promise.resolve();
     this.lastRequestAt = 0;
     this.inFlightRequests = new Map();
+    this.pausedUntil = 0;
+    this.lastResponseCache = null;
   }
 
   getProviderConfig() {
+    const keys = credentialManager.loadKeys();
+    
     return {
       provider: localStorage.getItem("ai_provider") || "gemini",
       geminiKey: localStorage.getItem("gemini_key"),
-      grokKey: localStorage.getItem("grok_key")
+      grokKey: localStorage.getItem("grok_key"),
+      groqKey: keys.groqKey
     };
   }
 
   async ask(input, context = {}, options = {}) {
-    const { provider, geminiKey, grokKey } = this.getProviderConfig();
+    const normalizedInput = String(input || '').trim();
+    const localResponse = this.getLocalResponse(normalizedInput);
+    if (localResponse) {
+      return localResponse;
+    }
+
+    if (this.lastResponseCache?.input === normalizedInput) {
+      return this.lastResponseCache.response;
+    }
+
+    const { provider, geminiKey, grokKey, groqKey } = this.getProviderConfig();
 
     if (provider === "gemini" && !geminiKey) {
       throw new Error("Invalid API key");
@@ -41,8 +69,12 @@ class GeminiService {
       throw new Error("Invalid API key");
     }
 
-    const prompt = this.buildPrompt(input, context);
-    const requestKey = `${provider}:${input}`;
+    if (provider === "groq" && !groqKey) {
+      throw new Error("Invalid API key");
+    }
+
+    const prompt = this.buildPrompt(normalizedInput, context);
+    const requestKey = `${provider}:${normalizedInput}`;
 
     if (this.inFlightRequests.has(requestKey)) {
       return this.inFlightRequests.get(requestKey);
@@ -50,17 +82,40 @@ class GeminiService {
 
     const task = this.enqueueRequest(async () => {
       if (provider === "gemini") {
-        return this.callGemini(prompt, geminiKey, input, options);
+        return this.callGemini(prompt, geminiKey, normalizedInput, options);
+      }
+
+      if (provider === "groq") {
+        try {
+          const groqResponse = await this.callGroq(prompt, groqKey, options);
+          // Task 4.2: Return immediately on Groq success (no fallback)
+          return groqResponse;
+        } catch (error) {
+          // Task 4.1: Fallback to Gemini when Groq fails
+          if (geminiKey) {
+            try {
+              return await this.callGemini(prompt, geminiKey, normalizedInput, options);
+            } catch {
+              // Both providers failed
+              throw new Error("Both Groq and Gemini failed");
+            }
+          }
+          // No Gemini key available, throw original Groq error
+          throw error;
+        }
       }
 
       try {
-        return this.callGrok(prompt, grokKey, input);
+        return this.callGrok(prompt, grokKey, normalizedInput);
       } catch (error) {
         throw new Error(error?.message || "Network error");
       }
     });
 
     this.inFlightRequests.set(requestKey, task);
+    task.then((response) => {
+      this.lastResponseCache = { input: normalizedInput, response };
+    }).catch(() => undefined);
     task.finally(() => {
       this.inFlightRequests.delete(requestKey);
     });
@@ -70,6 +125,11 @@ class GeminiService {
 
   enqueueRequest(task) {
     const runTask = async () => {
+      const pauseRemaining = this.pausedUntil - Date.now();
+      if (pauseRemaining > 0) {
+        await wait(pauseRemaining);
+      }
+
       const elapsed = Date.now() - this.lastRequestAt;
       if (elapsed < THROTTLE_MS) {
         await wait(THROTTLE_MS - elapsed);
@@ -84,10 +144,6 @@ class GeminiService {
   }
 
   buildPrompt(input, context) {
-    const historyContext = this.conversationHistory.length > 0
-      ? this.conversationHistory.map((item) => `User: ${item.user}\nAssistant: ${item.assistant}`).join("\n")
-      : "No previous conversation";
-
     return `You are FRIDAY, a smart desktop AI assistant.
 
 CORE RULES:
@@ -124,12 +180,7 @@ INTENT RULES:
 - For chatting, do not use JSON
 - Do not use robotic phrases like "sir"
 
-CONTEXT:
-Active App: ${context.activeApp || "unknown"}
-Time: ${new Date().toLocaleTimeString()}
-Recent Conversation:
-${historyContext}
-
+Current app: ${context.activeApp || "unknown"}
 User input: "${input}"`;
   }
 
@@ -162,6 +213,7 @@ User input: "${input}"`;
       }
 
       if (response.status === 429) {
+        this.pausedUntil = Date.now() + RATE_LIMIT_DELAY_MS;
         if (attempt < MAX_429_ATTEMPTS) {
           if (onStatus) onStatus("Rate limit hit, retrying...");
           await wait(RATE_LIMIT_DELAY_MS);
@@ -225,6 +277,28 @@ User input: "${input}"`;
     return this.parseResponse(rawText, input);
   }
 
+  async callGroq(prompt, apiKey, options = {}) {
+    const provider = new GroqProvider(apiKey);
+    const onStatus = typeof options.onStatus === 'function' ? options.onStatus : null;
+    
+    const abortController = new AbortController();
+    const messages = [
+      { role: "system", content: "Reply with plain chat text or a JSON object with action and target only." },
+      { role: "user", content: prompt }
+    ];
+    
+    const response = await provider.sendMessage(messages, { 
+      signal: abortController.signal,
+      onStatus 
+    });
+    
+    if (response.status === 'ERROR') {
+      throw new Error(response.text);
+    }
+    
+    return this.parseResponse(response.text, prompt);
+  }
+
   parseResponse(rawText, input) {
     const cleaned = rawText.replace(/```json|```/g, "").trim();
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
@@ -260,6 +334,19 @@ User input: "${input}"`;
 
   clearHistory() {
     this.conversationHistory = [];
+  }
+
+  getLocalResponse(input) {
+    const normalized = input.toLowerCase().trim();
+    const response = SIMPLE_LOCAL_RESPONSES[normalized];
+    if (!response) {
+      return null;
+    }
+
+    return {
+      kind: "chat",
+      message: response
+    };
   }
 }
 
