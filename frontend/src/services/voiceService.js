@@ -1,7 +1,7 @@
 /**
  * voiceService.js
  *
- * Single instance voice controller.
+ * Wake-word gated single-turn voice controller.
  */
 
 let recognition = null;
@@ -12,6 +12,8 @@ class VoiceService {
     this.onResult = null;
     this.onStateChange = null;
     this.isSpeaking = false;
+    this.awaitingWakeWord = true;
+    this.awaitingCommand = false;
     this.initVoice();
   }
 
@@ -29,28 +31,48 @@ class VoiceService {
       };
 
       recognition.onresult = (event) => {
-        const text = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
-        if (this.onResult) {
-          this.onResult(text);
+        const transcript = event.results[event.results.length - 1][0].transcript.trim();
+        const normalized = transcript.toLowerCase();
+
+        if (this.awaitingWakeWord) {
+          if (normalized === 'arise' || normalized === 'arise!') {
+            this.awaitingWakeWord = false;
+            this.awaitingCommand = true;
+          }
+          return;
+        }
+
+        if (this.awaitingCommand) {
+          this.awaitingCommand = false;
+          this.awaitingWakeWord = true;
+          if (this.onResult) {
+            this.onResult(transcript);
+          }
+          this.stopListening();
         }
       };
 
       recognition.onend = () => {
         isListening = false;
+        this.awaitingWakeWord = true;
+        this.awaitingCommand = false;
         this.notifyStateChange();
       };
 
       recognition.onerror = (event) => {
         console.log('Mic error ignored:', event.error);
         isListening = false;
+        this.awaitingWakeWord = true;
+        this.awaitingCommand = false;
         this.notifyStateChange();
       };
     }
   }
 
   startListening() {
-    if (!recognition) return;
-    if (isListening) return;
+    if (!recognition || isListening) return;
+    this.awaitingWakeWord = true;
+    this.awaitingCommand = false;
 
     try {
       recognition.start();

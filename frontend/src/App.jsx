@@ -145,7 +145,10 @@ function AppContent() {
       });
 
       if (planResult?.response) {
-        voiceService.speak(planResult.response);
+        const shouldSpeak = !planResult.response.trim().startsWith('{');
+        if (shouldSpeak) {
+          voiceService.speak(planResult.response);
+        }
         setResponses((prev) => [...prev, createEntry(planResult.response, 'assistant')]);
       }
 

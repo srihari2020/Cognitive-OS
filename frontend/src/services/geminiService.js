@@ -35,51 +35,59 @@ class GeminiService {
       throw new Error("Invalid API key");
     }
 
-    const systemPrompt = this.buildSystemPrompt(input, context);
+    const prompt = this.buildPrompt(input, context);
 
     if (provider === "gemini") {
-      return this.callGemini(systemPrompt, geminiKey, input, options);
+      return this.callGemini(prompt, geminiKey, input, options);
     }
 
     try {
-      return this.callGrok(systemPrompt, grokKey, input);
+      return this.callGrok(prompt, grokKey, input);
     } catch (error) {
       throw new Error(error?.message || "Network error");
     }
   }
 
-  buildSystemPrompt(input, context) {
+  buildPrompt(input, context) {
     const historyContext = this.conversationHistory.length > 0
       ? this.conversationHistory.map((item) => `User: ${item.user}\nAssistant: ${item.assistant}`).join("\n")
       : "No previous conversation";
 
-    return `You are a modern AI assistant for a desktop environment.
+    return `You are FRIDAY, a smart desktop AI assistant.
 
-STYLE:
-- Sound natural, modern, and human
-- Keep replies short unless the user asks for more detail
-- Do not use robotic honorifics or stiff phrasing
-- Do not invent fallback replies
+CORE RULES:
+- Never execute anything automatically
+- Only act on explicit user input
+- One input equals one response
+- Do not repeat or reuse previous commands
+- Ignore filler words and extract only the real intent
 
-TASK:
-Understand the user's request and return valid JSON with:
-1. "message": the assistant's natural reply
-2. "actions": an array of actions to execute, if any
+RESPONSE MODE:
+- If the user is chatting, reply naturally in short human language
+- If the user gives a command, return ONLY JSON and nothing else
 
-ACTION TYPES:
-- { "type": "open_app", "target": "chrome" }
-- { "type": "search", "query": "AI tools", "provider": "google" }
-- { "type": "ui_action", "action": "click" }
-- { "type": "tab_control", "action": "new_tab" }
-- { "type": "file_action", "action": "extract", "target": "file.zip" }
-- { "type": "set_volume", "level": 50 }
+JSON FORMAT:
+{"action":"...","target":"..."}
 
-RULES:
-1. Return only valid JSON
-2. Keep "message" concise and human-like
-3. Use an empty actions array for pure conversation
-4. Do not use phrases like "sir"
-5. Do not include extra commentary outside the JSON
+SUPPORTED ACTIONS:
+- open_app
+- search_web
+- scroll
+- click
+- type
+- none
+
+INTENT RULES:
+- If input is empty or unclear, return {"action":"none","target":""}
+- If the command is "open chrome and search for AI", optimize it to {"action":"search_web","target":"AI"}
+- If the app is unknown or invalid, return {"action":"none","target":""}
+- Do not guess UI elements
+- For scroll, target should be "up" or "down"
+- For click, target should be a visible element description only when clearly provided
+- For browser tab commands, use action "click" with target "new tab", "switch tab", or "close tab"
+- For open_app, supported targets include settings, chrome, edge, vscode, youtube, google, gmail, github, whatsapp, notepad, calculator, explorer
+- For chatting, do not use JSON
+- Do not use robotic phrases like "sir"
 
 CONTEXT:
 Active App: ${context.activeApp || "unknown"}
@@ -87,7 +95,7 @@ Time: ${new Date().toLocaleTimeString()}
 Recent Conversation:
 ${historyContext}
 
-User request: "${input}"`;
+User input: "${input}"`;
   }
 
   async callGemini(userInput, key, input, options = {}) {
@@ -142,11 +150,7 @@ User request: "${input}"`;
         throw new Error("Gemini failed");
       }
 
-      try {
-        return this.parseResponse(text, input);
-      } catch {
-        throw new Error("Gemini failed");
-      }
+      return this.parseResponse(text, input);
     }
 
     throw new Error("AI busy, try again");
@@ -163,10 +167,10 @@ User request: "${input}"`;
       body: JSON.stringify({
         model: "grok-beta",
         messages: [
-          { role: "system", content: "Return valid JSON only." },
+          { role: "system", content: "Reply with plain chat text or a JSON object with action and target only." },
           { role: "user", content: prompt }
         ],
-        temperature: 0.7
+        temperature: 0.4
       })
     });
 
@@ -178,31 +182,36 @@ User request: "${input}"`;
   }
 
   parseResponse(rawText, input) {
-    let jsonStr = rawText.replace(/```json|```/g, "").trim();
-    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No JSON object found in AI response.");
-    jsonStr = jsonMatch[0];
+    const cleaned = rawText.replace(/```json|```/g, "").trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
 
-    const result = JSON.parse(jsonStr);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const action = typeof parsed.action === "string" ? parsed.action.trim() : "none";
+      const target = typeof parsed.target === "string" ? parsed.target.trim() : "";
+      const result = {
+        kind: "command",
+        action,
+        target,
+        raw: parsed
+      };
 
-    if (!result.message) {
-      throw new Error("AI response missing 'message' field");
+      this.pushHistory(input, jsonMatch[0]);
+      return result;
     }
 
-    if (!result.actions) {
-      result.actions = [];
-    }
+    this.pushHistory(input, cleaned);
+    return {
+      kind: "chat",
+      message: cleaned
+    };
+  }
 
-    this.conversationHistory.push({
-      user: input,
-      assistant: result.message
-    });
-
+  pushHistory(user, assistant) {
+    this.conversationHistory.push({ user, assistant });
     if (this.conversationHistory.length > this.MAX_HISTORY) {
       this.conversationHistory.shift();
     }
-
-    return result;
   }
 
   clearHistory() {

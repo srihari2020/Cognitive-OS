@@ -625,24 +625,32 @@ ipcMain.handle("assistant:ui-action", (_event, { action, target, x, y }) => {
   try {
     switch (action) {
       case "click":
-        if (x !== undefined && y !== undefined) {
-          robot.moveMouse(x, y);
+        if (x === undefined || y === undefined) {
+          return { ok: false, error: `Cannot click "${target || "target"}" without a known position.` };
         }
+        robot.moveMouse(x, y);
         robot.mouseClick();
-        return { ok: true, message: "Clicked, sir." };
+        return { ok: true, message: "Clicked." };
       
       case "scroll_down":
         robot.scrollMouse(0, -100);
-        return { ok: true, message: "Scrolling down, sir." };
+        return { ok: true, message: "Scrolled down." };
       
       case "scroll_up":
         robot.scrollMouse(0, 100);
-        return { ok: true, message: "Scrolling up, sir." };
+        return { ok: true, message: "Scrolled up." };
+
+      case "type":
+        if (!target || typeof target !== "string") {
+          return { ok: false, error: "Cannot type without text." };
+        }
+        robot.typeString(target);
+        return { ok: true, message: "Typed text." };
       
       case "move_mouse":
         if (x !== undefined && y !== undefined) {
           robot.moveMouse(x, y);
-          return { ok: true, message: `Moved mouse to ${x}, ${y}, sir.` };
+          return { ok: true, message: `Moved mouse to ${x}, ${y}.` };
         }
         return { ok: false, error: "Coordinates missing" };
 
@@ -659,15 +667,15 @@ ipcMain.handle("assistant:tab-control", (_event, { action }) => {
     switch (action) {
       case "new_tab":
         robot.keyTap("t", "control");
-        return { ok: true, message: "New tab opened, sir." };
+        return { ok: true, message: "Opened a new tab." };
       
       case "switch_tab":
         robot.keyTap("tab", "control");
-        return { ok: true, message: "Switched tab, sir." };
+        return { ok: true, message: "Switched tabs." };
       
       case "close_tab":
         robot.keyTap("w", "control");
-        return { ok: true, message: "Tab closed, sir." };
+        return { ok: true, message: "Closed the tab." };
       
       default:
         return { ok: false, error: `Unknown tab action: ${action}` };
