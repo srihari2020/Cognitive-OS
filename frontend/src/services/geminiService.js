@@ -6,6 +6,9 @@
 
 const RETRY_DELAY_MS = 1000;
 const MAX_503_ATTEMPTS = 2;
+const RATE_LIMIT_DELAY_MS = 2000;
+const MAX_429_ATTEMPTS = 2;
+const THROTTLE_MS = 1500;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -14,6 +17,9 @@ class GeminiService {
     this.conversationHistory = [];
     this.MAX_HISTORY = 10;
     this.endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+    this.requestChain = Promise.resolve();
+    this.lastRequestAt = 0;
+    this.inFlightRequests = new Map();
   }
 
   getProviderConfig() {
@@ -36,16 +42,45 @@ class GeminiService {
     }
 
     const prompt = this.buildPrompt(input, context);
+    const requestKey = `${provider}:${input}`;
 
-    if (provider === "gemini") {
-      return this.callGemini(prompt, geminiKey, input, options);
+    if (this.inFlightRequests.has(requestKey)) {
+      return this.inFlightRequests.get(requestKey);
     }
 
-    try {
-      return this.callGrok(prompt, grokKey, input);
-    } catch (error) {
-      throw new Error(error?.message || "Network error");
-    }
+    const task = this.enqueueRequest(async () => {
+      if (provider === "gemini") {
+        return this.callGemini(prompt, geminiKey, input, options);
+      }
+
+      try {
+        return this.callGrok(prompt, grokKey, input);
+      } catch (error) {
+        throw new Error(error?.message || "Network error");
+      }
+    });
+
+    this.inFlightRequests.set(requestKey, task);
+    task.finally(() => {
+      this.inFlightRequests.delete(requestKey);
+    });
+
+    return task;
+  }
+
+  enqueueRequest(task) {
+    const runTask = async () => {
+      const elapsed = Date.now() - this.lastRequestAt;
+      if (elapsed < THROTTLE_MS) {
+        await wait(THROTTLE_MS - elapsed);
+      }
+      this.lastRequestAt = Date.now();
+      return task();
+    };
+
+    const scheduled = this.requestChain.then(runTask, runTask);
+    this.requestChain = scheduled.catch(() => undefined);
+    return scheduled;
   }
 
   buildPrompt(input, context) {
@@ -85,7 +120,7 @@ INTENT RULES:
 - For scroll, target should be "up" or "down"
 - For click, target should be a visible element description only when clearly provided
 - For browser tab commands, use action "click" with target "new tab", "switch tab", or "close tab"
-- For open_app, supported targets include settings, chrome, edge, vscode, youtube, google, gmail, github, whatsapp, notepad, calculator, explorer
+- For open_app, supported targets include settings, control panel, chrome, edge, vscode, youtube, google, gmail, github, whatsapp, notepad, calculator, explorer
 - For chatting, do not use JSON
 - Do not use robotic phrases like "sir"
 
@@ -124,6 +159,15 @@ User input: "${input}"`;
 
       if (response.status === 401 || response.status === 403) {
         throw new Error("Invalid API key");
+      }
+
+      if (response.status === 429) {
+        if (attempt < MAX_429_ATTEMPTS) {
+          if (onStatus) onStatus("Rate limit hit, retrying...");
+          await wait(RATE_LIMIT_DELAY_MS);
+          continue;
+        }
+        throw new Error("AI busy, try again");
       }
 
       if (response.status === 503) {

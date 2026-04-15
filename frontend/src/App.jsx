@@ -44,6 +44,9 @@ function AppContent() {
   const scrollRef = useRef(null);
   const isProcessingRef = useRef(false);
   const activeInputRef = useRef('');
+  const queuedInputsRef = useRef([]);
+  const [queueSize, setQueueSize] = useState(0);
+  const isOverlayRoute = new URLSearchParams(window.location.search).get('overlay') === '1';
 
   useEffect(() => {
     let interval;
@@ -65,6 +68,26 @@ function AppContent() {
     localStorage.removeItem('lastCommand');
     localStorage.removeItem('pendingCommand');
     localStorage.removeItem('autoExecute');
+  }, []);
+
+  const enqueueCommand = useCallback((text, options = {}) => {
+    const normalizedInput = (text || '').trim();
+    if (!normalizedInput) {
+      return false;
+    }
+
+    if (activeInputRef.current === normalizedInput) {
+      return false;
+    }
+
+    const alreadyQueued = queuedInputsRef.current.some((item) => item.text === normalizedInput);
+    if (alreadyQueued) {
+      return false;
+    }
+
+    queuedInputsRef.current.push({ text: normalizedInput, options });
+    setQueueSize(queuedInputsRef.current.length);
+    return true;
   }, []);
 
   const handleMicClick = useCallback(() => {
@@ -103,6 +126,7 @@ function AppContent() {
     }
 
     if (isProcessingRef.current) {
+      enqueueCommand(normalizedInput, options);
       return;
     }
 
@@ -153,8 +177,21 @@ function AppContent() {
       }
 
       if (planResult?.plan?.length > 0) {
-        await runWorkflow(planResult.plan);
-        memoryStore.saveInteraction(normalizedInput, planResult.plan, { success: true });
+        const executionResult = await runWorkflow(planResult.plan);
+        memoryStore.saveInteraction(normalizedInput, planResult.plan, executionResult);
+
+        if (!executionResult?.success) {
+          throw new Error(executionResult?.error || 'Execution failed.');
+        }
+
+        const launchedApp = planResult.plan.some((step) => step.action === 'open_app' || step.action === 'search_web');
+        if (launchedApp && window.electronAssistant?.enterAssistantMode) {
+          try {
+            await window.electronAssistant.enterAssistantMode();
+          } catch (modeError) {
+            console.error('Failed to enter assistant mode:', modeError);
+          }
+        }
       }
     } catch (error) {
       const message = error?.message || 'Network error';
@@ -173,8 +210,18 @@ function AppContent() {
       if (!isVoiceSpeaking) {
         setAnimationState('IDLE');
       }
+
+      if (queuedInputsRef.current.length > 0) {
+        const nextItem = queuedInputsRef.current.shift();
+        setQueueSize(queuedInputsRef.current.length);
+        if (nextItem) {
+          window.setTimeout(() => {
+            handleSendCommand(nextItem.text, nextItem.options);
+          }, 0);
+        }
+      }
     }
-  }, [clearCommandState, isElectron, isVoiceSpeaking]);
+  }, [clearCommandState, enqueueCommand, isElectron, isVoiceSpeaking]);
 
   useEffect(() => {
     window.ALLOW_BACKGROUND = false;
@@ -207,6 +254,39 @@ function AppContent() {
       voiceService.cancel();
     };
   }, [clearCommandState, handleSendCommand, isElectron]);
+
+  if (isOverlayRoute) {
+    return (
+      <div className="relative w-full h-screen overflow-hidden bg-transparent">
+        <div className="absolute top-3 right-4 z-[120] flex items-center gap-2">
+          {queueSize > 0 && (
+            <div className="glass-ui rounded-full px-3 py-1 text-[10px] text-cyan-300">
+              {queueSize} queued
+            </div>
+          )}
+          <button
+            onClick={() => window.electronAssistant?.expandMainWindow?.()}
+            className="glass-ui rounded-full px-3 py-1 text-[10px] text-white/80 hover:text-white"
+          >
+            Expand
+          </button>
+        </div>
+
+        <ChatWidget
+          isOpen
+          onClose={() => {}}
+          responses={responses}
+          onSendCommand={(text) => handleSendCommand(text, { userTriggered: true, source: 'chat' })}
+          isProcessing={isProcessing}
+          isVoiceListening={isVoiceListening}
+          isVoiceSpeaking={isVoiceSpeaking}
+          onMicClick={handleMicClick}
+          animationState={animationState}
+          thinkingMessage={thinkingMessage}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full h-screen overflow-x-hidden overflow-y-hidden bg-[#0b0f1a] flex flex-col items-center">
@@ -309,6 +389,12 @@ function AppContent() {
         </div>
         <div className={`status-dot-pulse ${backendStatus === 'OFFLINE' ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'bg-cyan-400 shadow-[0_0_10px_rgba(0,234,255,0.5)]'}`} />
       </div>
+
+      {queueSize > 0 && (
+        <div className="absolute top-6 left-8 glass-ui rounded-full px-3 py-1 text-[10px] text-cyan-300">
+          {queueSize} queued
+        </div>
+      )}
     </div>
   );
 }

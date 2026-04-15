@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("electronAssistant", {
   getActiveApp: () => ipcRenderer.invoke("assistant:get-active-app"),
   getSystemInfo: () => ipcRenderer.invoke("assistant:get-system-info"),
   hideOverlay: () => ipcRenderer.invoke("assistant:hide-overlay"),
+  enterAssistantMode: () => ipcRenderer.invoke("assistant:enter-assistant-mode"),
+  expandMainWindow: () => ipcRenderer.invoke("assistant:expand-main-window"),
   uiAction: (payload) => ipcRenderer.invoke("assistant:ui-action", payload),
   tabControl: (payload) => ipcRenderer.invoke("assistant:tab-control", payload),
   fileAction: (payload) => ipcRenderer.invoke("assistant:file-action", payload),

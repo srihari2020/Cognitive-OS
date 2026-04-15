@@ -202,6 +202,15 @@ function positionWindowTopCenter(win, width, height) {
   win.setBounds({ x: targetX, y: targetY, width, height }, true);
 }
 
+function positionWindowRight(win, width, height) {
+  const display = screen.getPrimaryDisplay();
+  const { x, y, width: workWidth, height: workHeight } = display.workArea;
+  const margin = 20;
+  const targetX = x + workWidth - width - margin;
+  const targetY = y + workHeight - height - margin;
+  win.setBounds({ x: targetX, y: targetY, width, height }, true);
+}
+
 function applyMode(mode) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const size = MODE_SIZES[mode] || MODE_SIZES.active;
@@ -299,7 +308,7 @@ function createOverlayWindow() {
   const preloadPath = path.join(__dirname, "preload.cjs");
   const iconPath = getIconPath();
   const overlayWidth = 420;
-  const overlayHeight = 120;
+  const overlayHeight = 560;
 
   overlayWindow = new BrowserWindow({
     width: overlayWidth,
@@ -307,7 +316,7 @@ function createOverlayWindow() {
     frame: false,
     transparent: true,
     alwaysOnTop: true,
-    resizable: false,
+    resizable: true,
     skipTaskbar: true,
     show: false,
     icon: iconPath,
@@ -324,7 +333,8 @@ function createOverlayWindow() {
   overlayWindow.setAlwaysOnTop(true, "screen-saver");
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayWindow.setMenuBarVisibility(false);
-  positionWindowTopCenter(overlayWindow, overlayWidth, overlayHeight);
+  overlayWindow.setMinimumSize(320, 420);
+  positionWindowRight(overlayWindow, overlayWidth, overlayHeight);
 
   if (app.isPackaged) {
     const indexPath = path.join(__dirname, "..", "dist", "index.html");
@@ -333,15 +343,143 @@ function createOverlayWindow() {
     overlayWindow.loadURL(`${DEV_URL}?overlay=1`);
   }
 
-  overlayWindow.on("blur", () => {
-    if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
-      overlayWindow.hide();
-    }
-  });
-
   overlayWindow.on("closed", () => {
     overlayWindow = null;
   });
+}
+
+function enterAssistantMode() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return { ok: false, error: "Assistant window unavailable" };
+
+  try {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized()) {
+      mainWindow.minimize();
+    }
+
+    overlayWindow.show();
+    overlayWindow.focus();
+    overlayWindow.setAlwaysOnTop(true, "floating");
+    positionWindowRight(overlayWindow, 420, 560);
+    overlayWindow.webContents.send("assistant:visibility", { visible: true, mode: "assistant" });
+    return { ok: true };
+  } catch (error) {
+    log.error("Failed to enter assistant mode", error);
+    return { ok: false, error: error.message };
+  }
+}
+
+function expandMainWindow() {
+  try {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.hide();
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+      applyMode("active");
+      mainWindow.webContents.send("assistant:visibility", { visible: true, mode: "active" });
+    }
+    return { ok: true };
+  } catch (error) {
+    log.error("Failed to expand main window", error);
+    return { ok: false, error: error.message };
+  }
+}
+
+function resolveAppCommand(appName) {
+  const normalized = String(appName || "").trim().toLowerCase();
+  const commandMap = {
+    settings: { type: "shell", command: "start ms-settings:" },
+    "control panel": { type: "shell", command: "control" },
+    chrome: { type: "path", command: "chrome" },
+    edge: { type: "path", command: "msedge" },
+    vscode: { type: "path", command: "code" },
+    code: { type: "path", command: "code" },
+    notepad: { type: "path", command: "notepad" },
+    calculator: { type: "path", command: "calc" },
+    calc: { type: "path", command: "calc" },
+    explorer: { type: "path", command: "explorer" },
+  };
+
+  return commandMap[normalized] || null;
+}
+
+function whereExists(command) {
+  return new Promise((resolve) => {
+    exec(`where.exe ${command}`, { windowsHide: true }, (error, stdout) => {
+      if (error || !stdout.trim()) {
+        resolve(null);
+        return;
+      }
+      resolve(stdout.trim().split(/\r?\n/)[0]);
+    });
+  });
+}
+
+async function launchApplication(appName) {
+  const normalized = String(appName || "").trim().toLowerCase();
+  if (!normalized) {
+    return { ok: false, error: "Invalid app name" };
+  }
+
+  const mapped = resolveAppCommand(normalized);
+  if (mapped?.type === "shell") {
+    return new Promise((resolve) => {
+      exec(mapped.command, { windowsHide: true }, (error) => {
+        if (error) {
+          resolve({ ok: false, error: error.message });
+          return;
+        }
+        resolve({ ok: true, command: mapped.command });
+      });
+    });
+  }
+
+  const pathHit = mapped?.command ? await whereExists(mapped.command) : null;
+  if (pathHit) {
+    return new Promise((resolve) => {
+      const child = spawn(pathHit, [], {
+        windowsHide: true,
+        detached: true,
+        stdio: "ignore",
+      });
+      child.on("error", (error) => resolve({ ok: false, error: error.message }));
+      child.unref();
+      resolve({ ok: true, command: pathHit });
+    });
+  }
+
+  if (cachedApps[normalized]) {
+    return new Promise((resolve) => {
+      const child = spawn(cachedApps[normalized], [], {
+        windowsHide: true,
+        detached: true,
+        stdio: "ignore",
+      });
+      child.on("error", (error) => resolve({ ok: false, error: error.message }));
+      child.unref();
+      resolve({ ok: true, command: cachedApps[normalized] });
+    });
+  }
+
+  const scanned = await scanInstalledApps();
+  if (scanned[normalized]) {
+    return new Promise((resolve) => {
+      const child = spawn(scanned[normalized], [], {
+        windowsHide: true,
+        detached: true,
+        stdio: "ignore",
+      });
+      child.on("error", (error) => resolve({ ok: false, error: error.message }));
+      child.unref();
+      resolve({ ok: true, command: scanned[normalized] });
+    });
+  }
+
+  return { ok: false, error: `App not found: ${appName}` };
 }
 
 function registerHotkey() {
@@ -517,6 +655,10 @@ ipcMain.handle("assistant:hide-overlay", () => {
   return { visible: false };
 });
 
+ipcMain.handle("assistant:enter-assistant-mode", () => enterAssistantMode());
+
+ipcMain.handle("assistant:expand-main-window", () => expandMainWindow());
+
 ipcMain.handle("assistant:open-external", async (_event, url) => {
   if (!url || typeof url !== "string") return { ok: false, error: "Invalid URL" };
   await shell.openExternal(url);
@@ -563,37 +705,7 @@ ipcMain.handle("assistant:open-path", async (_event, target) => {
 });
 
 ipcMain.handle("assistant:launch-app", (_event, appName) => {
-  if (!appName || typeof appName !== "string") {
-    return { ok: false, error: "Invalid app name" };
-  }
-
-  // Security: Restricted whitelist of allowed apps
-  const whitelist = {
-    vscode: "code",
-    chrome: "start chrome",
-    explorer: "explorer",
-    notepad: "notepad",
-    calculator: "calc",
-  };
-
-  const command = whitelist[appName.toLowerCase()];
-  if (!command) {
-    return { ok: false, error: "App not in security whitelist." };
-  }
-
-  return new Promise((resolve) => {
-    try {
-      const child = spawn("powershell.exe", ["-NoProfile", "-Command", `Start-Process "${command}"`], {
-        windowsHide: true,
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
-      resolve({ ok: true });
-    } catch (error) {
-      resolve({ ok: false, error: error.message });
-    }
-  });
+  return launchApplication(appName);
 });
 
 ipcMain.handle("assistant:get-active-app", async () => {

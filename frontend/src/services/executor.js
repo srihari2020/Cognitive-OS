@@ -70,11 +70,11 @@ async function executeStep(step) {
 
   switch (step.action) {
     case 'open_app': {
-      if (!step.cmd || !step.target) {
+      if (!step.target) {
         return { status: 'failed', message: 'Invalid app command.' };
       }
 
-      const result = await electron.exec(step.cmd);
+      const result = await bridge.launchApp(step.target);
       if (!result?.ok) {
         return { status: 'failed', message: `Failed to open ${step.target}: ${result?.error || 'Unknown error'}` };
       }

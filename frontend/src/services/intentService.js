@@ -11,6 +11,7 @@ const URL_MAP = {
 
 const SYSTEM_APPS = {
   settings: 'start ms-settings:',
+  'control panel': 'control',
 };
 
 const DESKTOP_APPS = {
