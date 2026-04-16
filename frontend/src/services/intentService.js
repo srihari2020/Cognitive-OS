@@ -80,8 +80,6 @@ export const intentService = {
     const normalizedAction = typeof action === 'string' ? action.trim().toLowerCase() : 'none';
     const normalizedTarget = typeof target === 'string' ? target.trim() : '';
 
-    console.log('[intentService] normalizeCommand:', { action, target, normalizedAction, normalizedTarget });
-
     if (!['open_app', 'search_web', 'scroll', 'click', 'type', 'none'].includes(normalizedAction)) {
       return { action: 'none', target: '' };
     }
@@ -92,7 +90,6 @@ export const intentService = {
 
     if (normalizedAction === 'open_app') {
       const appInfo = this.findBestApp(normalizedTarget);
-      console.log('[intentService] findBestApp result:', appInfo);
       if (!appInfo) {
         console.warn(`App not found: ${normalizedTarget}`);
         return { action: 'none', target: '' };
@@ -118,7 +115,9 @@ export const intentService = {
         if (!appInfo) {
           throw new Error(`App not found: ${command.target}`);
         }
-        return [{ action: 'open_app', target: appInfo.name, cmd: appInfo.cmd }];
+        // Pass a normalized app key that backend can recognize
+        const appKey = this.getAppKey(appInfo);
+        return [{ action: 'open_app', target: appKey }];
       }
 
       case 'search_web':
@@ -146,6 +145,27 @@ export const intentService = {
       default:
         return [];
     }
+  },
+
+  getAppKey(appInfo) {
+    // Map app names to backend-recognized keys
+    const nameToKey = {
+      'VS Code': 'vscode',
+      'Chrome': 'chrome',
+      'Edge': 'edge',
+      'Settings': 'settings',
+      'Control Panel': 'control panel',
+      'Notepad': 'notepad',
+      'Calculator': 'calc',
+      'Explorer': 'explorer',
+      'YouTube': 'youtube',
+      'Google': 'google',
+      'Gmail': 'gmail',
+      'GitHub': 'github',
+      'WhatsApp': 'whatsapp',
+    };
+
+    return nameToKey[appInfo.name] || appInfo.name.toLowerCase();
   },
 
   findBestApp(target) {

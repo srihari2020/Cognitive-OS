@@ -12,12 +12,17 @@ const SYSTEM_APPS = {
 const DESKTOP_APPS = {
   vscode: { name: 'VS Code', cmd: 'code', type: 'desktop', verified: true },
   code: { name: 'VS Code', cmd: 'code', type: 'desktop', verified: true },
+  'vs code': { name: 'VS Code', cmd: 'code', type: 'desktop', verified: true },
+  'visual studio code': { name: 'VS Code', cmd: 'code', type: 'desktop', verified: true },
   chrome: { name: 'Chrome', cmd: 'start chrome', type: 'desktop', verified: true },
+  'google chrome': { name: 'Chrome', cmd: 'start chrome', type: 'desktop', verified: true },
   edge: { name: 'Edge', cmd: 'start msedge', type: 'desktop', verified: true },
+  'microsoft edge': { name: 'Edge', cmd: 'start msedge', type: 'desktop', verified: true },
   notepad: { name: 'Notepad', cmd: 'notepad', type: 'desktop', verified: true },
   calculator: { name: 'Calculator', cmd: 'calc', type: 'desktop', verified: true },
   calc: { name: 'Calculator', cmd: 'calc', type: 'desktop', verified: true },
   explorer: { name: 'Explorer', cmd: 'explorer', type: 'desktop', verified: true },
+  'file explorer': { name: 'Explorer', cmd: 'explorer', type: 'desktop', verified: true },
 };
 
 const URL_MAP = {
@@ -48,25 +53,40 @@ class LocalAppMapper {
     }
 
     const name = appName.toLowerCase().trim();
+    
+    // Also try without spaces for fuzzy matching
+    const nameNoSpaces = name.replace(/\s+/g, '');
 
     // Priority 1: System apps
     if (SYSTEM_APPS[name]) {
       return SYSTEM_APPS[name];
+    }
+    if (SYSTEM_APPS[nameNoSpaces]) {
+      return SYSTEM_APPS[nameNoSpaces];
     }
 
     // Priority 2: Desktop apps
     if (DESKTOP_APPS[name]) {
       return DESKTOP_APPS[name];
     }
+    if (DESKTOP_APPS[nameNoSpaces]) {
+      return DESKTOP_APPS[nameNoSpaces];
+    }
 
     // Priority 3: URL mappings
     if (URL_MAP[name]) {
       return URL_MAP[name];
     }
+    if (URL_MAP[nameNoSpaces]) {
+      return URL_MAP[nameNoSpaces];
+    }
 
     // Priority 4: Scanned apps
     if (this.scannedApps.has(name)) {
       return this.scannedApps.get(name);
+    }
+    if (this.scannedApps.has(nameNoSpaces)) {
+      return this.scannedApps.get(nameNoSpaces);
     }
 
     // Not found - return null (no guessing)

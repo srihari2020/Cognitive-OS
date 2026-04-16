@@ -402,6 +402,11 @@ function resolveAppCommand(appName) {
     calculator: { type: "path", command: "calc" },
     calc: { type: "path", command: "calc" },
     explorer: { type: "path", command: "explorer" },
+    youtube: { type: "shell", command: "start https://youtube.com" },
+    google: { type: "shell", command: "start https://google.com" },
+    gmail: { type: "shell", command: "start https://mail.google.com" },
+    github: { type: "shell", command: "start https://github.com" },
+    whatsapp: { type: "shell", command: "start https://web.whatsapp.com" },
   };
 
   return commandMap[normalized] || null;
