@@ -1,31 +1,7 @@
 import { geminiService } from './geminiService';
 import { backgroundService } from './BackgroundService';
-
-const URL_MAP = {
-  youtube: 'https://youtube.com',
-  google: 'https://google.com',
-  gmail: 'https://mail.google.com',
-  github: 'https://github.com',
-  whatsapp: 'https://web.whatsapp.com',
-};
-
-const SYSTEM_APPS = {
-  settings: 'start ms-settings:',
-  'control panel': 'control',
-};
-
-const DESKTOP_APPS = {
-  vscode: 'code',
-  code: 'code',
-  chrome: 'start chrome',
-  edge: 'start msedge',
-  notepad: 'notepad',
-  calculator: 'calc',
-  calc: 'calc',
-  explorer: 'explorer',
-};
-
-let scannedApps = {};
+import { responseTransformer } from './responseTransformer';
+import { localAppMapper } from './localAppMapper';
 
 const isElectron = !!(window.electron && window.electron.exec);
 
@@ -39,14 +15,8 @@ export const intentService = {
       return;
     }
 
-    const cached = localStorage.getItem('friday_scanned_apps');
-    if (cached) {
-      try {
-        scannedApps = JSON.parse(cached);
-      } catch (error) {
-        console.warn('Failed to parse cached apps:', error);
-      }
-    }
+    // Initialize app mapper with cached apps
+    await localAppMapper.scan();
   },
 
   async scanAppsInBackground() {
@@ -54,20 +24,12 @@ export const intentService = {
       return;
     }
 
-    const bridge = window.electronAssistant;
-    if (!bridge || !bridge.scanApps) return;
-
-    try {
-      const apps = await bridge.scanApps();
-      scannedApps = apps;
-      localStorage.setItem('friday_scanned_apps', JSON.stringify(apps));
-    } catch (error) {
-      console.error('FRIDAY: Background app scan failed:', error);
-    }
+    await localAppMapper.scan();
   },
 
   async refreshApps() {
-    await this.scanAppsInBackground();
+    localAppMapper.clearCache();
+    await localAppMapper.scan();
   },
 
   async generatePlan(text, options = {}) {
@@ -101,10 +63,13 @@ export const intentService = {
     const command = this.normalizeCommand(geminiData.action, geminiData.target);
     const plan = this.buildPlanFromCommand(command);
 
+    // Generate natural language response instead of JSON
+    const naturalResponse = responseTransformer.generateNaturalMessage(command.action, command.target);
+
     return {
       intent: command.action === 'none' ? 'chat' : 'action',
       plan,
-      response: JSON.stringify(command),
+      response: naturalResponse,
       command,
       confidence: 0.95,
       source: 'gemini',
@@ -114,6 +79,8 @@ export const intentService = {
   normalizeCommand(action, target) {
     const normalizedAction = typeof action === 'string' ? action.trim().toLowerCase() : 'none';
     const normalizedTarget = typeof target === 'string' ? target.trim() : '';
+
+    console.log('[intentService] normalizeCommand:', { action, target, normalizedAction, normalizedTarget });
 
     if (!['open_app', 'search_web', 'scroll', 'click', 'type', 'none'].includes(normalizedAction)) {
       return { action: 'none', target: '' };
@@ -125,7 +92,9 @@ export const intentService = {
 
     if (normalizedAction === 'open_app') {
       const appInfo = this.findBestApp(normalizedTarget);
-      if (!appInfo.cmd || appInfo.type === 'invalid') {
+      console.log('[intentService] findBestApp result:', appInfo);
+      if (!appInfo) {
+        console.warn(`App not found: ${normalizedTarget}`);
         return { action: 'none', target: '' };
       }
       return { action: 'open_app', target: appInfo.name };
@@ -146,8 +115,8 @@ export const intentService = {
     switch (command.action) {
       case 'open_app': {
         const appInfo = this.findBestApp(command.target);
-        if (!appInfo.cmd || appInfo.type === 'invalid') {
-          throw new Error('App not found');
+        if (!appInfo) {
+          throw new Error(`App not found: ${command.target}`);
         }
         return [{ action: 'open_app', target: appInfo.name, cmd: appInfo.cmd }];
       }
@@ -180,24 +149,12 @@ export const intentService = {
   },
 
   findBestApp(target) {
-    const name = target.toLowerCase().trim();
-
-    if (URL_MAP[name]) {
-      return { name: target, cmd: `start ${URL_MAP[name]}`, type: 'url' };
+    if (!target) {
+      return null;
     }
 
-    if (SYSTEM_APPS[name]) {
-      return { name: target, cmd: SYSTEM_APPS[name], type: 'system' };
-    }
-
-    if (DESKTOP_APPS[name]) {
-      return { name: target, cmd: DESKTOP_APPS[name], type: 'desktop' };
-    }
-
-    if (scannedApps[name]) {
-      return { name, cmd: `start "" "${scannedApps[name]}"`, type: 'scanned' };
-    }
-
-    return { name: target, cmd: '', type: 'invalid' };
+    // Use localAppMapper for resolution
+    const appCommand = localAppMapper.resolve(target);
+    return appCommand;
   }
 };

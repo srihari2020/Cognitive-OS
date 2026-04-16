@@ -28,6 +28,8 @@ const THINKING_MESSAGES = [
   'Processing...',
 ];
 
+const MERGE_WINDOW_MS = 500;
+
 const MotionDiv = motion.div;
 
 function AppContent() {
@@ -45,6 +47,8 @@ function AppContent() {
   const isProcessingRef = useRef(false);
   const activeInputRef = useRef('');
   const queuedInputsRef = useRef([]);
+  const queueTimerRef = useRef(null);
+  const sendCommandRef = useRef(null);
   const [queueSize, setQueueSize] = useState(0);
   const isOverlayRoute = new URLSearchParams(window.location.search).get('overlay') === '1';
 
@@ -80,14 +84,42 @@ function AppContent() {
       return false;
     }
 
-    const alreadyQueued = queuedInputsRef.current.some((item) => item.text === normalizedInput);
-    if (alreadyQueued) {
+    const queue = queuedInputsRef.current;
+    if (queue.some((item) => item.text === normalizedInput)) {
       return false;
     }
 
-    queuedInputsRef.current.push({ text: normalizedInput, options });
-    setQueueSize(queuedInputsRef.current.length);
+    const now = Date.now();
+    const lastItem = queue[queue.length - 1];
+    if (lastItem && now - lastItem.enqueuedAt <= MERGE_WINDOW_MS) {
+      queue[queue.length - 1] = { text: normalizedInput, options, enqueuedAt: now };
+      setQueueSize(queue.length);
+      return true;
+    }
+
+    queue.push({ text: normalizedInput, options, enqueuedAt: now });
+    setQueueSize(queue.length);
     return true;
+  }, []);
+
+  const flushNextQueuedCommand = useCallback(() => {
+    if (queueTimerRef.current) {
+      window.clearTimeout(queueTimerRef.current);
+      queueTimerRef.current = null;
+    }
+
+    if (queuedInputsRef.current.length === 0) {
+      setQueueSize(0);
+      return;
+    }
+
+    const nextItem = queuedInputsRef.current.shift();
+    setQueueSize(queuedInputsRef.current.length);
+    if (!nextItem) {
+      return;
+    }
+
+    sendCommandRef.current?.(nextItem.text, nextItem.options);
   }, []);
 
   const handleMicClick = useCallback(() => {
@@ -212,16 +244,16 @@ function AppContent() {
       }
 
       if (queuedInputsRef.current.length > 0) {
-        const nextItem = queuedInputsRef.current.shift();
-        setQueueSize(queuedInputsRef.current.length);
-        if (nextItem) {
-          window.setTimeout(() => {
-            handleSendCommand(nextItem.text, nextItem.options);
-          }, 0);
-        }
+        queueTimerRef.current = window.setTimeout(() => {
+          flushNextQueuedCommand();
+        }, MERGE_WINDOW_MS);
       }
     }
-  }, [clearCommandState, enqueueCommand, isElectron, isVoiceSpeaking]);
+  }, [clearCommandState, enqueueCommand, flushNextQueuedCommand, isElectron, isVoiceSpeaking]);
+
+  useEffect(() => {
+    sendCommandRef.current = handleSendCommand;
+  }, [handleSendCommand]);
 
   useEffect(() => {
     window.ALLOW_BACKGROUND = false;
@@ -248,6 +280,9 @@ function AppContent() {
     };
 
     return () => {
+      if (queueTimerRef.current) {
+        window.clearTimeout(queueTimerRef.current);
+      }
       voiceService.onResult = null;
       voiceService.onStateChange = null;
       voiceService.stop();

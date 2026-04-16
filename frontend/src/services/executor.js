@@ -68,18 +68,49 @@ async function executeStep(step) {
     return { status: 'failed', message: 'Invalid command step.' };
   }
 
+  // Helper function to execute with retry
+  const executeWithRetry = async (executeFn, maxAttempts = 2) => {
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const result = await executeFn();
+        if (result?.ok) {
+          return { success: true, result, attempts: attempt };
+        }
+        lastError = result?.error || 'Unknown error';
+        
+        // Wait 500ms before retry (except on last attempt)
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (error) {
+        lastError = error.message || 'Execution error';
+        
+        // Wait 500ms before retry (except on last attempt)
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+    }
+    
+    return { success: false, error: lastError, attempts: maxAttempts };
+  };
+
   switch (step.action) {
     case 'open_app': {
       if (!step.target) {
         return { status: 'failed', message: 'Invalid app command.' };
       }
 
-      const result = await bridge.launchApp(step.target);
-      if (!result?.ok) {
-        return { status: 'failed', message: `Failed to open ${step.target}: ${result?.error || 'Unknown error'}` };
+      const result = await executeWithRetry(() => bridge.launchApp(step.target));
+      
+      if (!result.success) {
+        console.error(`Failed to open ${step.target} after ${result.attempts} attempts:`, result.error);
+        return { status: 'failed', message: `Failed to open ${step.target}` };
       }
 
-      return { status: 'success', message: `Opened ${step.target}.` };
+      return { status: 'success', message: `Opened ${step.target}.`, retried: result.attempts > 1 };
     }
 
     case 'search_web': {
@@ -88,12 +119,14 @@ async function executeStep(step) {
       }
 
       const url = `https://www.google.com/search?q=${encodeURIComponent(step.query)}`;
-      const result = await electron.exec(`start ${url}`);
-      if (!result?.ok) {
-        return { status: 'failed', message: `Failed to search for ${step.query}: ${result?.error || 'Unknown error'}` };
+      const result = await executeWithRetry(() => electron.exec(`start ${url}`));
+      
+      if (!result.success) {
+        console.error(`Failed to search for ${step.query} after ${result.attempts} attempts:`, result.error);
+        return { status: 'failed', message: `Failed to search for ${step.query}` };
       }
 
-      return { status: 'success', message: `Searched for ${step.query}.` };
+      return { status: 'success', message: `Searched for ${step.query}.`, retried: result.attempts > 1 };
     }
 
     case 'ui_action': {
@@ -101,26 +134,30 @@ async function executeStep(step) {
         return { status: 'failed', message: 'Missing UI action.' };
       }
 
-      const res = await bridge.uiAction({
+      const result = await executeWithRetry(() => bridge.uiAction({
         action: step.sub_action,
         target: step.target,
         x: step.x,
         y: step.y,
-      });
+      }));
 
-      if (!res?.ok) {
-        return { status: 'failed', message: res?.error || 'UI action failed.' };
+      if (!result.success) {
+        console.error(`UI action failed after ${result.attempts} attempts:`, result.error);
+        return { status: 'failed', message: result.error || 'UI action failed.' };
       }
 
-      return { status: 'success', message: res.message || 'UI action completed.' };
+      return { status: 'success', message: result.result.message || 'UI action completed.', retried: result.attempts > 1 };
     }
 
     case 'tab_control': {
-      const res = await bridge.tabControl({ action: step.sub_action });
-      if (!res?.ok) {
-        return { status: 'failed', message: res?.error || 'Tab control failed.' };
+      const result = await executeWithRetry(() => bridge.tabControl({ action: step.sub_action }));
+      
+      if (!result.success) {
+        console.error(`Tab control failed after ${result.attempts} attempts:`, result.error);
+        return { status: 'failed', message: result.error || 'Tab control failed.' };
       }
-      return { status: 'success', message: res.message || 'Tab action completed.' };
+      
+      return { status: 'success', message: result.result.message || 'Tab action completed.', retried: result.attempts > 1 };
     }
 
     default:
